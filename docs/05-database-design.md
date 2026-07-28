@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-Dokumen ini mendefinisikan model data untuk Distill pada level conceptual, logical, dan physical. Desain ini mendukung project lifecycle, canvas state persistence, chat history, dan blueprint generation tanpa redundansi.
+This document defines the data model for Distill at the conceptual, logical, and physical levels. This design supports the project lifecycle, canvas state persistence, chat history, and blueprint generation without redundancy.
 
 ---
 
@@ -60,12 +60,12 @@ Dokumen ini mendefinisikan model data untuk Distill pada level conceptual, logic
     └──────────────┘
 ```
 
-**Relasi:**
-- `PROJECT` 1:1 `CANVAS` — Setiap project memiliki tepat satu canvas.
-- `PROJECT` 1:N `MESSAGE` — Setiap project memiliki banyak pesan chat.
-- `CANVAS` 1:N `STAGE` — Setiap canvas memiliki tepat 10 stage.
-- `STAGE` 1:N `STAGE_ITEM` — Setiap stage memiliki banyak item (confirmed, needs_validation, next_step).
-- `PROJECT` 1:0..1 `BLUEPRINT` — Setiap project memiliki nol atau satu blueprint.
+**Relations:**
+- `PROJECT` 1:1 `CANVAS` — Each project has exactly one canvas.
+- `PROJECT` 1:N `MESSAGE` — Each project has many chat messages.
+- `CANVAS` 1:N `STAGE` — Each canvas has exactly 10 stages.
+- `STAGE` 1:N `STAGE_ITEM` — Each stage has many items (confirmed, needs_validation, next_step).
+- `PROJECT` 1:0..1 `BLUEPRINT` — Each project has zero or one blueprint.
 
 ---
 
@@ -103,7 +103,7 @@ Dokumen ini mendefinisikan model data untuk Distill pada level conceptual, logic
 | created_at | TIMESTAMP | NOT NULL, DEFAULT NOW() | Stage creation time |
 | updated_at | TIMESTAMP | NOT NULL, DEFAULT NOW() | Last update time |
 
-**Unique Constraint:** `(canvas_id, name)` — satu canvas tidak boleh punya stage name duplikat.
+**Unique Constraint:** `(canvas_id, name)` — a single canvas cannot have duplicate stage names.
 
 ### 3.4 Entity: STAGE_ITEM
 
@@ -335,7 +335,21 @@ Stored as JSON string in SQLite, JSONB in PostgreSQL.
 
 ---
 
-## 6. Data Integrity Rules
+## 6. Deployment Note (MVP Session-Only)
+
+SQLite is used for **session persistence** only. Data is not stored permanently.
+- Browser refresh → data is lost
+- Tab closed → data is lost
+- User closes application → data is lost
+
+**Sufficient as long as:** the user actively uses it from the beginning until the blueprint is finished.
+
+SQLite file location: `/tmp/distill.db` (in-memory or temp file).
+No need for backups, migrations, or persistent disks.
+
+---
+
+## 7. Data Integrity Rules
 
 | Rule | Enforcement | Level |
 |------|-------------|-------|
@@ -353,9 +367,9 @@ Stored as JSON string in SQLite, JSONB in PostgreSQL.
 
 ---
 
-## 7. Query Patterns
+## 8. Query Patterns
 
-### 7.1 Load Full Project
+### 8.1 Load Full Project
 ```sql
 SELECT p.*, c.id as canvas_id
 FROM projects p
@@ -363,7 +377,7 @@ LEFT JOIN canvases c ON c.project_id = p.id
 WHERE p.id = ?;
 ```
 
-### 7.2 Load Canvas with Stages and Items
+### 8.2 Load Canvas with Stages and Items
 ```sql
 SELECT 
     s.id, s.name, s.status, s.summary, s.confidence, s.order_index,
@@ -374,7 +388,7 @@ WHERE s.canvas_id = ?
 ORDER BY s.order_index, si.type, si.order_index;
 ```
 
-### 7.3 Load Chat History
+### 8.3 Load Chat History
 ```sql
 SELECT id, role, content, structured_data, timestamp, turn_number
 FROM messages
@@ -382,7 +396,7 @@ WHERE project_id = ?
 ORDER BY turn_number ASC, timestamp ASC;
 ```
 
-### 7.4 Check Completion Status
+### 8.4 Check Completion Status
 ```sql
 SELECT 
     COUNT(CASE WHEN status = 'complete' THEN 1 END) as complete_count,
@@ -392,7 +406,7 @@ FROM stages
 WHERE canvas_id = ?;
 ```
 
-### 7.5 Get Projects List
+### 8.5 Get Projects List
 ```sql
 SELECT id, name, status, created_at, updated_at
 FROM projects
@@ -401,7 +415,7 @@ ORDER BY updated_at DESC;
 
 ---
 
-## 8. Migration Path
+## 9. Migration Path
 
 | Version | Change | Script |
 |---------|--------|--------|
@@ -411,7 +425,7 @@ ORDER BY updated_at DESC;
 
 ---
 
-## 9. Entity Cardinality Summary
+## 10. Entity Cardinality Summary
 
 | Parent | Child | Cardinality | Cascade |
 |--------|-------|-------------|---------|
