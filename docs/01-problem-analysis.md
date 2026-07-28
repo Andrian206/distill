@@ -1,7 +1,3 @@
-Here is the exact translation of the Markdown document into English, without any changes to the meaning or formatting:
-
----
-
 # 01 — Problem Analysis
 
 ## 1. Problem Statement

@@ -1,5 +1,3 @@
---- START OF FILE Paste July 28, 2026 - 10:21PM ---
-
 # 04 — Functional Requirement
 
 ## 1. Scope

@@ -1,7 +1,3 @@
-Here is the exact translation of the Markdown document into English, preserving every single structural element, code block, ASCII flow chart, table, and formatting detail:
-
----
-
 # 03 — Business Process
 
 ## 1. Business Process Overview
