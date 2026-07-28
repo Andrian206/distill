@@ -160,22 +160,16 @@ app.listen(process.env.PORT || 10000);
 
 **Benefits:** Single service, single URL, single build pipeline.
 
+**Note:** SQLite in `/tmp/` — data is lost on redeploy/refresh. Sufficient for MVP sessions.
+
 ### 6.2 Environment Variables (Render)
 
 | Variable | Value | Source |
 |----------|-------|--------|
 | `PORT` | 10000 | Render auto-set |
 | `GEMINI_API_KEY` | sk-... | Render Secret File |
-| `DB_PATH` | /data/distill.db | Render Disk (persistent) |
+| `DB_PATH` | /tmp/distill.db | Temp file (session-only) |
 | `NODE_ENV` | production | Render auto-set |
-
-### 6.3 Persistent SQLite on Render
-
-Render Web Service free tier does not have a persistent disk. For MVP:
-- Use **Render Disk** (minimum $0.25/GB/month) for persistent SQLite, or
-- Auto-backup to GitHub/external repo every N hours (free tier workaround).
-
-**MVP Recommendation:** Use Render Disk (inexpensive) so data is not lost upon redeploy.
 
 ---
 
