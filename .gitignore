@@ -1,13 +1,13 @@
 # Dependencies
 node_modules/
-package-lock.json
 yarn.lock
 pnpm-lock.yaml
 
-# Environment variables
+# Environment variables (NEVER commit these!)
 .env
 .env.local
 .env.production
+.env.*.local
 
 # Build output
 dist/
