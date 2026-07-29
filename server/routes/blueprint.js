@@ -6,8 +6,108 @@ import { distillCanvas, compileBlueprintWithAI } from '../services/aiService.js'
 const router = express.Router();
 
 /**
+ * GET /api/blueprint/:project_id/preview
+ * FR-06-003: Generate blueprint preview without saving (for user review before finalizing)
+ */
+router.get('/:project_id/preview', async (req, res, next) => {
+  try {
+    const { project_id } = req.params;
+
+    // Get project with canvas
+    const project = projectDb.getById(project_id);
+    if (!project) {
+      return res.status(404).json({
+        error: 'Project not found',
+        code: 'NOT_FOUND'
+      });
+    }
+
+    // Check if all stages are complete
+    const incompleteStages = project.canvas.stages.filter(
+      stage => stage.status === 'not_started' || stage.status === 'partial'
+    );
+
+    if (incompleteStages.length > 0) {
+      return res.status(400).json({
+        error: 'Cannot generate blueprint: some stages are incomplete',
+        code: 'INCOMPLETE_CANVAS',
+        incomplete_stages: incompleteStages.map(s => s.name)
+      });
+    }
+
+    // Detect contradictions
+    const contradictions = detectContradictions(project.canvas);
+    if (contradictions.length > 0) {
+      return res.status(400).json({
+        error: 'Cannot generate blueprint: contradictions detected',
+        code: 'CONTRADICTIONS_FOUND',
+        contradictions: contradictions
+      });
+    }
+
+    // Distill canvas
+    let distilledCanvas;
+    try {
+      const distillationResult = await distillCanvas(project.canvas);
+      distilledCanvas = {
+        ...project.canvas,
+        stages: project.canvas.stages.map(stage => {
+          const distilled = distillationResult.distilled[stage.name];
+          if (distilled) {
+            return { ...stage, summary: distilled.summary, confidence: distilled.confidence };
+          }
+          return stage;
+        }),
+      };
+      if (distillationResult.contradictions && distillationResult.contradictions.length > 0) {
+        return res.status(400).json({
+          error: 'Contradictions found during distillation',
+          code: 'CONTRADICTIONS_FOUND',
+          contradictions: distillationResult.contradictions
+        });
+      }
+    } catch (error) {
+      console.error('Distillation error:', error);
+      distilledCanvas = project.canvas;
+    }
+
+    // Compile blueprint (AI with JS fallback)
+    let blueprintContent;
+    try {
+      blueprintContent = await compileBlueprintWithAI(project, distilledCanvas);
+    } catch (error) {
+      console.error('AI blueprint compilation error:', error);
+      try {
+        blueprintContent = await compileBlueprint(project, distilledCanvas);
+      } catch (fallbackError) {
+        console.error('Fallback compilation error:', fallbackError);
+        return res.status(500).json({
+          error: 'Failed to compile blueprint',
+          code: 'AI_ERROR',
+          details: error.message
+        });
+      }
+    }
+
+    // Return preview WITHOUT saving
+    res.json({
+      preview: true,
+      project_id,
+      content: blueprintContent
+    });
+  } catch (error) {
+    console.error('Blueprint preview error:', error);
+    next({
+      statusCode: 500,
+      code: 'INTERNAL_ERROR',
+      message: `Blueprint preview failed: ${error.message}`
+    });
+  }
+});
+
+/**
  * POST /api/blueprint/:project_id
- * Generate blueprint from distilled canvas
+ * Generate blueprint from distilled canvas (saves to DB after approval)
  */
 router.post('/:project_id', async (req, res, next) => {
   try {

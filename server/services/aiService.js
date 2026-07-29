@@ -4,6 +4,7 @@ import buildExtractionPrompt from '../prompts/extract.js';
 import buildDistillationPrompt from '../prompts/distill.js';
 import buildBlueprintPrompt from '../prompts/blueprint.js';
 import buildConversationPrompt from '../prompts/converse.js';
+import buildSummarizationPrompt from '../prompts/summarize.js';
 
 // Validate API key on startup
 if (!process.env.GEMINI_API_KEY) {
@@ -18,13 +19,77 @@ console.log('✅ Gemini API key detected');
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 // Model configuration
-const MODEL_NAME = 'gemini-3.1-flash-lite';
+const MODEL_NAME = 'gemma-4-31b-it';
 const GENERATION_CONFIG = {
   temperature: 0.75,
   topK: 50,
   topP: 0.95,
   maxOutputTokens: 2560,
 };
+
+/**
+ * Extract valid JSON from AI response text
+ * Handles: markdown code blocks, trailing text, nested braces, string literals
+ * Returns: parsed JSON object or throws
+ */
+function extractJSON(text) {
+  if (!text) throw new Error('Empty text for JSON extraction');
+
+  // Strategy 1: Try markdown code block first (```json ... ```)
+  const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (codeBlockMatch) {
+    const candidate = codeBlockMatch[1].trim();
+    try {
+      return JSON.parse(candidate);
+    } catch (e) {
+      // Fall through to next strategy
+    }
+  }
+
+  // Strategy 2: Find first '{' and extract balanced JSON
+  const startIdx = text.indexOf('{');
+  if (startIdx === -1) throw new Error('No JSON object found in response');
+
+  let depth = 0;
+  let inString = false;
+  let escapeNext = false;
+  let endIdx = -1;
+
+  for (let i = startIdx; i < text.length; i++) {
+    const char = text[i];
+
+    if (escapeNext) {
+      escapeNext = false;
+      continue;
+    }
+
+    if (char === '\\' && inString) {
+      escapeNext = true;
+      continue;
+    }
+
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    if (!inString) {
+      if (char === '{') depth++;
+      if (char === '}') {
+        depth--;
+        if (depth === 0) {
+          endIdx = i + 1;
+          break;
+        }
+      }
+    }
+  }
+
+  if (endIdx === -1) throw new Error('Unbalanced JSON braces');
+
+  const jsonStr = text.substring(startIdx, endIdx);
+  return JSON.parse(jsonStr);
+}
 
 /**
  * Call Gemini API with retry logic
@@ -77,21 +142,17 @@ export async function extractInformation(userMessage, canvasState) {
   try {
     const response = await callGemini(prompt, true);
 
-    // Parse JSON response with retry
-    const jsonMatch = response.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      console.warn('No JSON found in extraction response, retrying...');
+    // Parse JSON response using robust extractJSON (handles trailing text, code blocks)
+    let extracted;
+    try {
+      extracted = extractJSON(response);
+    } catch (jsonError) {
+      console.warn('No valid JSON found in extraction response, retrying...');
       // Retry once as per docs
       const retryResponse = await callGemini(prompt, true, 1);
-      const retryJsonMatch = retryResponse.match(/\{[\s\S]*\}/);
-      if (!retryJsonMatch) {
-        throw new Error('No JSON found after retry');
-      }
-      const extracted = JSON.parse(retryJsonMatch[0]);
-      return validateExtractionResult(extracted);
+      extracted = extractJSON(retryResponse);
     }
 
-    const extracted = JSON.parse(jsonMatch[0]);
     return validateExtractionResult(extracted);
   } catch (error) {
     console.error('Extraction error:', error);
@@ -147,9 +208,11 @@ function limitCanvasContext(canvasState) {
  * @param {string} targetStage - Target stage for next question
  * @param {object} extractionResult - Extraction result from Prompt A
  * @param {array} recentMessages - Last 5 messages for context (docs §7.10)
+ * @param {string} [composedPrompt] - Optional pre-composed prompt from promptComposer (docs/11)
  */
-export async function generateResponse(userMessage, canvasState, targetStage, extractionResult, recentMessages = []) {
-  const prompt = buildConversationPrompt(userMessage, canvasState, targetStage, extractionResult, recentMessages);
+export async function generateResponse(userMessage, canvasState, targetStage, extractionResult, recentMessages = [], composedPrompt = null) {
+  // Use composed prompt if provided (dynamic composition per docs/11), else fall back to static prompt
+  const prompt = composedPrompt || buildConversationPrompt(userMessage, canvasState, targetStage, extractionResult, recentMessages);
 
   try {
     const response = await callGemini(prompt, false);
@@ -258,16 +321,8 @@ export async function distillCanvas(canvas) {
   try {
     const response = await callGemini(prompt, true);
 
-    // Extract JSON from response
-    const jsonMatch = response.match(/```json\s*([\s\S]*?)\s*```/) ||
-      response.match(/\{[\s\S]*\}/);
-
-    if (!jsonMatch) {
-      throw new Error('No JSON found in distillation response');
-    }
-
-    const jsonText = jsonMatch[1] || jsonMatch[0];
-    const result = JSON.parse(jsonText);
+    // Parse JSON using robust extractJSON
+    const result = extractJSON(response);
 
     // Validate structure
     if (!result.distilled || typeof result.distilled !== 'object') {
@@ -291,16 +346,8 @@ export async function compileBlueprintWithAI(project, canvas) {
   try {
     const response = await callGemini(prompt, true);
 
-    // Extract JSON from response
-    const jsonMatch = response.match(/```json\s*([\s\S]*?)\s*```/) ||
-      response.match(/\{[\s\S]*\}/);
-
-    if (!jsonMatch) {
-      throw new Error('No JSON found in blueprint response');
-    }
-
-    const jsonText = jsonMatch[1] || jsonMatch[0];
-    const result = JSON.parse(jsonText);
+    // Parse JSON using robust extractJSON
+    const result = extractJSON(response);
 
     // Validate required fields
     const requiredFields = [
@@ -319,5 +366,27 @@ export async function compileBlueprintWithAI(project, canvas) {
   } catch (error) {
     console.error('Blueprint compilation error:', error);
     throw new Error(`Failed to compile blueprint: ${error.message}`);
+  }
+}
+
+/**
+ * Summarize conversation messages for context compression
+ * Called every 50 messages to maintain manageable context window
+ * Preserves: decisions, canvas changes, user insights, areas to explore
+ * 
+ * @param {array} messages - Array of message objects to summarize
+ * @param {object} canvasState - Current canvas state for context
+ * @returns {string} Comprehensive summary preserving all critical information
+ */
+export async function summarizeMessages(messages, canvasState) {
+  const prompt = buildSummarizationPrompt(messages, canvasState);
+
+  try {
+    const response = await callGemini(prompt, false);
+    return response.trim();
+  } catch (error) {
+    console.error('Summarization error:', error);
+    // Return basic fallback summary
+    return `SUMMARY: Conversation about project with ${messages.length} messages. Last discussed: ${messages[messages.length - 1]?.content?.substring(0, 100) || 'N/A'}`;
   }
 }

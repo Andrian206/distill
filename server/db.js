@@ -9,6 +9,9 @@ db.pragma('foreign_keys = ON');
 
 // Initialize database schema
 export function initializeDatabase() {
+  // Run migrations first
+  runMigrations();
+
   // Create tables
   db.exec(`
     -- Projects table
@@ -17,6 +20,8 @@ export function initializeDatabase() {
       name TEXT NOT NULL DEFAULT 'Untitled Project',
       status TEXT NOT NULL DEFAULT 'discovering'
         CHECK (status IN ('discovering', 'distilling', 'validating', 'completed')),
+      domain TEXT DEFAULT 'general'
+        CHECK (domain IN ('general', 'enterprise', 'startup', 'research', 'community')),
       created_at DATETIME NOT NULL DEFAULT (datetime('now')),
       updated_at DATETIME NOT NULL DEFAULT (datetime('now'))
     );
@@ -45,7 +50,8 @@ export function initializeDatabase() {
       status TEXT NOT NULL DEFAULT 'not_started'
         CHECK (status IN ('not_started', 'partial', 'complete', 'needs_review')),
       summary TEXT,
-      confidence INTEGER CHECK (confidence >= 0 AND confidence <= 100),
+      confidence INTEGER DEFAULT 0 CHECK (confidence >= 0 AND confidence <= 100),
+      contradictions TEXT, -- JSON array of contradiction objects
       order_index INTEGER NOT NULL CHECK (order_index >= 0 AND order_index <= 9),
       created_at DATETIME NOT NULL DEFAULT (datetime('now')),
       updated_at DATETIME NOT NULL DEFAULT (datetime('now')),
@@ -63,6 +69,10 @@ export function initializeDatabase() {
       type TEXT NOT NULL
         CHECK (type IN ('confirmed', 'needs_validation', 'next_step')),
       content TEXT NOT NULL,
+      evidence_type TEXT
+        CHECK (evidence_type IS NULL OR evidence_type IN ('explicit', 'observational', 'experiential', 'assumption')),
+      confidence_boost INTEGER DEFAULT 0
+        CHECK (confidence_boost >= 0 AND confidence_boost <= 20),
       order_index INTEGER NOT NULL DEFAULT 0,
       created_at DATETIME NOT NULL DEFAULT (datetime('now')),
       FOREIGN KEY (stage_id) REFERENCES stages(id) ON DELETE CASCADE
@@ -70,6 +80,7 @@ export function initializeDatabase() {
 
     CREATE INDEX IF NOT EXISTS idx_stage_items_stage ON stage_items(stage_id);
     CREATE INDEX IF NOT EXISTS idx_stage_items_type ON stage_items(type);
+    CREATE INDEX IF NOT EXISTS idx_stage_items_evidence_type ON stage_items(evidence_type);
 
     -- Messages table
     CREATE TABLE IF NOT EXISTS messages (
@@ -116,6 +127,53 @@ export function initializeDatabase() {
   `);
 
   console.log('✅ Database initialized successfully');
+}
+
+// Database migrations
+function runMigrations() {
+  // Check if stage_items table exists and has evidence_type column
+  const stageItemsInfo = db.prepare(`PRAGMA table_info(stage_items)`).all();
+  const stagesInfo = db.prepare(`PRAGMA table_info(stages)`).all();
+
+  if (stageItemsInfo.length > 0) {
+    // Check for evidence_type column
+    const hasEvidenceType = stageItemsInfo.some(col => col.name === 'evidence_type');
+    const hasConfidenceBoost = stageItemsInfo.some(col => col.name === 'confidence_boost');
+
+    if (!hasEvidenceType) {
+      console.log('🔄 Migrating: Adding evidence_type column to stage_items...');
+      db.exec(`
+        ALTER TABLE stage_items
+        ADD COLUMN evidence_type TEXT
+        CHECK (evidence_type IS NULL OR evidence_type IN ('explicit', 'observational', 'experiential', 'assumption'))
+      `);
+      console.log('✅ Migration complete: evidence_type column added');
+    }
+
+    if (!hasConfidenceBoost) {
+      console.log('🔄 Migrating: Adding confidence_boost column to stage_items...');
+      db.exec(`
+        ALTER TABLE stage_items
+        ADD COLUMN confidence_boost INTEGER DEFAULT 0
+        CHECK (confidence_boost >= 0 AND confidence_boost <= 20)
+      `);
+      console.log('✅ Migration complete: confidence_boost column added');
+    }
+  }
+
+  // Migrate: Add contradictions column to stages table
+  if (stagesInfo.length > 0) {
+    const hasContradictions = stagesInfo.some(col => col.name === 'contradictions');
+    
+    if (!hasContradictions) {
+      console.log('🔄 Migrating: Adding contradictions column to stages table...');
+      db.exec(`
+        ALTER TABLE stages
+        ADD COLUMN contradictions TEXT
+      `);
+      console.log('✅ Migration complete: contradictions column added');
+    }
+  }
 }
 
 // Stage definitions with order
@@ -182,13 +240,15 @@ export const projectDb = {
 
     // Get stages with items
     const stages = db.prepare(`
-      SELECT s.*, 
+      SELECT s.*,
         (SELECT json_group_array(
           json_object(
             'id', si.id,
             'type', si.type,
             'content', si.content,
-            'order_index', si.order_index
+            'order_index', si.order_index,
+            'evidence_type', si.evidence_type,
+            'confidence_boost', si.confidence_boost
           )
         ) FROM stage_items si WHERE si.stage_id = s.id) as items
       FROM stages s
@@ -238,14 +298,15 @@ export const canvasDb = {
   },
 
   updateStage(stageId, updates) {
-    const { status, summary, confidence } = updates;
+    const { status, summary, confidence, contradictions } = updates;
     return db.prepare(`
       UPDATE stages 
       SET status = COALESCE(?, status),
           summary = COALESCE(?, summary),
-          confidence = COALESCE(?, confidence)
+          confidence = COALESCE(?, confidence),
+          contradictions = COALESCE(?, contradictions)
       WHERE id = ?
-    `).run(status, summary, confidence, stageId);
+    `).run(status, summary, confidence, contradictions, stageId);
   },
 
   getStageByName(canvasId, stageName) {
@@ -253,17 +314,37 @@ export const canvasDb = {
       SELECT * FROM stages WHERE canvas_id = ? AND name = ?
     `).get(canvasId, stageName);
   },
+
+  getStageById(stageId) {
+    return db.prepare(`
+      SELECT * FROM stages WHERE id = ?
+    `).get(stageId);
+  },
+
+  getStagesByCanvasId(canvasId) {
+    return db.prepare(`
+      SELECT * FROM stages WHERE canvas_id = ? ORDER BY order_index
+    `).all(canvasId);
+  },
 };
 
 // Stage items operations
 export const stageItemDb = {
-  create(stageId, type, content, orderIndex = 0) {
+  create(stageId, type, content, orderIndex = 0, evidenceType = null, confidenceBoost = 0) {
     const id = randomUUID();
     db.prepare(`
-      INSERT INTO stage_items (id, stage_id, type, content, order_index)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(id, stageId, type, content, orderIndex);
-    return { id, stage_id: stageId, type, content, order_index: orderIndex };
+      INSERT INTO stage_items (id, stage_id, type, content, order_index, evidence_type, confidence_boost)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(id, stageId, type, content, orderIndex, evidenceType, confidenceBoost);
+    return {
+      id,
+      stage_id: stageId,
+      type,
+      content,
+      order_index: orderIndex,
+      evidence_type: evidenceType,
+      confidence_boost: confidenceBoost
+    };
   },
 
   getByStageId(stageId) {
@@ -343,3 +424,4 @@ initializeDatabase();
 export default db;
 
 // Made with Bob
+

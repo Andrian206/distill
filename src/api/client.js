@@ -122,7 +122,15 @@ export const api = {
   // Blueprint
   blueprint: {
     /**
-     * Generate blueprint for a project
+     * Generate blueprint preview without saving (FR-06-003)
+     * @param {string} projectId - Project ID
+     * @returns {Promise<Object>} Blueprint preview (not saved)
+     */
+    preview: (projectId) =>
+      fetchAPI(`/blueprint/${projectId}/preview`),
+
+    /**
+     * Generate blueprint for a project (saves to DB)
      * @param {string} projectId - Project ID
      * @returns {Promise<Object>} Generated blueprint
      */

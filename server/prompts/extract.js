@@ -3,7 +3,7 @@
 
 export function buildExtractionPrompt(userMessage, canvasState) {
   const canvasContext = formatCanvasForPrompt(canvasState);
-  
+
   return `${canvasContext}
 
 ## User Message
@@ -33,7 +33,17 @@ Return ONLY valid JSON in this exact structure:
       "action": "add|replace|needs_review",
       "status": "not_started|partial|complete",
       "summary": "brief summary of the insight",
-      "confidence": 0-100
+      "items": {
+        "confirmed": [
+          {
+            "content": "fact or observation",
+            "evidence_type": "explicit|observational|experiential|assumption",
+            "confidence_boost": 5-20
+          }
+        ],
+        "needs_validation": ["assumption 1", "assumption 2"],
+        "next_steps": ["action 1", "action 2"]
+      }
     }
   },
   "impact": {
@@ -51,19 +61,60 @@ Return ONLY valid JSON in this exact structure:
   "redirect_message": ""
 }
 
+## Evidence Classification Rules
+
+For each confirmed item, classify evidence type and assign confidence boost:
+
+**Explicit Evidence** (confidence_boost: 20)
+- Statistics, numbers, percentages
+- KPIs, metrics, measurements
+- Survey results, research data
+- Official reports, documents
+- Quantifiable facts
+Example: "50% of teachers spend 2 hours daily on data entry"
+
+**Observational Evidence** (confidence_boost: 15)
+- Direct field observations
+- Witnessed behaviors or patterns
+- Results from interviews or discussions
+- Community feedback
+- Documented experiences
+Example: "I observed teachers manually copying data from notebooks to Excel"
+
+**Experiential Evidence** (confidence_boost: 10)
+- Personal experience
+- Daily work activities
+- Routine processes
+- First-hand knowledge
+- Professional background
+Example: "As a teacher for 10 years, I do this every day"
+
+**Assumption** (confidence_boost: 5)
+- Hypotheses not yet validated
+- Predictions or guesses
+- Beliefs without evidence
+- Unverified claims
+Example: "I think most teachers would prefer mobile apps"
+
 ## Rules
 1. Only include stages that have NEW information in "updates"
 2. Set status to "partial" if information is incomplete
-3. Set status to "complete" if information is sufficient
-4. Confidence score based on evidence strength (0-100)
-5. Detect impacts: if user changes, workflow/pain_point/opportunity need review
-6. Detect impacts: if pain_point changes, root_cause/assumption/evidence need review
-7. List missing stages that are critical for next steps
-8. Select ONE target_stage for the next question (prioritize by order)
-9. Do NOT invent information not present in the user's message
-10. Return ONLY the JSON object, no markdown, no explanation
-11. **Off-topic detection**: If the user's message is completely unrelated to the project (e.g., asking about weather, coding help, general knowledge), set "off_topic" to true and provide a "redirect_message" suggesting they refocus on their project. Do NOT extract any updates for off-topic messages.
-12. **Off-topic indicator**: If the message asks for code, business plans, or unrelated advice, treat it as off-topic.
+3. Set status to "complete" if information is sufficient (confidence >= 80%)
+4. **Evidence classification is MANDATORY** for all confirmed items
+5. **Items categorization**:
+   - "confirmed": Facts with evidence_type and confidence_boost
+   - "needs_validation": Assumptions or hypotheses (strings only)
+   - "next_steps": Actions or validations needed (strings only)
+6. Detect impacts: if user changes, workflow/pain_point/opportunity need review
+7. Detect impacts: if pain_point changes, root_cause/assumption/evidence need review
+8. List missing stages that are critical for next steps
+9. Select ONE target_stage for the next question (prioritize by order)
+10. Do NOT invent information not present in the user's message
+11. Return ONLY the JSON object, no markdown, no explanation
+12. **Off-topic detection**: If the user's message is completely unrelated to the project, set "off_topic" to true and provide a "redirect_message"
+13. **Off-topic indicator**: If the message asks for code, business plans, or unrelated advice, treat it as off-topic
+14. **Always populate items**: Every stage update MUST include items object with at least one category filled
+15. **Evidence type is required**: Every confirmed item MUST have evidence_type and confidence_boost
 
 Extract now:`;
 }

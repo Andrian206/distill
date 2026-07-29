@@ -11,6 +11,8 @@ export function BlueprintModal({ projectId, onClose }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [isPreview, setIsPreview] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     loadBlueprint();
@@ -19,6 +21,7 @@ export function BlueprintModal({ projectId, onClose }) {
   const loadBlueprint = async () => {
     setLoading(true);
     setError(null);
+    setIsPreview(false);
 
     try {
       // Try to get existing blueprint first
@@ -26,9 +29,10 @@ export function BlueprintModal({ projectId, onClose }) {
       try {
         data = await api.blueprint.get(projectId);
       } catch (err) {
-        // If not found, generate new one
+        // If not found, generate PREVIEW first (FR-06-003: preview before finalizing)
         if (err.status === 404) {
-          data = await api.blueprint.generate(projectId);
+          data = await api.blueprint.preview(projectId);
+          setIsPreview(true);
         } else {
           throw err;
         }
@@ -40,6 +44,23 @@ export function BlueprintModal({ projectId, onClose }) {
       setError(err.message || 'Failed to load blueprint');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // FR-06-003: Approve preview and save to database
+  const handleApprove = async () => {
+    setSaving(true);
+    setError(null);
+
+    try {
+      const saved = await api.blueprint.generate(projectId);
+      setBlueprint(saved);
+      setIsPreview(false);
+    } catch (err) {
+      console.error('Failed to save blueprint:', err);
+      setError(err.message || 'Failed to save blueprint');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -191,6 +212,15 @@ export function BlueprintModal({ projectId, onClose }) {
           )}
         </div>
 
+        {/* Preview banner (FR-06-003) */}
+        {blueprint && !loading && isPreview && (
+          <div className="px-6 py-3 bg-yellow-50 border-t border-yellow-200">
+            <p className="text-sm text-yellow-800">
+              📋 This is a <strong>preview</strong>. Review the blueprint above, then approve to save it.
+            </p>
+          </div>
+        )}
+
         {/* Footer */}
         {blueprint && !loading && (
           <div className="p-6 border-t border-gray-200 flex gap-3">
@@ -200,6 +230,15 @@ export function BlueprintModal({ projectId, onClose }) {
             >
               {copied ? '✓ Copied!' : '📋 Copy to Clipboard'}
             </button>
+            {isPreview ? (
+              <button
+                onClick={handleApprove}
+                disabled={saving}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors font-medium"
+              >
+                {saving ? 'Saving...' : '✅ Approve & Save'}
+              </button>
+            ) : null}
             <button
               onClick={onClose}
               className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition-colors font-medium"

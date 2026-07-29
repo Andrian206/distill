@@ -19,12 +19,26 @@ export function Layout() {
   const setMessages = useProjectStore(state => state.setMessages);
   const setLoading = useProjectStore(state => state.setLoading);
   const setError = useProjectStore(state => state.setError);
+  const selectStage = useProjectStore(state => state.selectStage);
+  const selectedStage = useProjectStore(state => state.selectedStage);
 
   useEffect(() => {
     if (projectId) {
       loadProject(projectId);
     }
   }, [projectId]);
+
+  // FR-03-005: Auto-select in_progress card if there is no manual choice
+  useEffect(() => {
+    if (project?.canvas?.stages && !selectedStage) {
+      const inProgressStage = project.canvas.stages.find(
+        s => s.status === 'partial' || s.status === 'needs_review'
+      );
+      if (inProgressStage) {
+        selectStage(inProgressStage.name);
+      }
+    }
+  }, [project, selectedStage, selectStage]);
 
   const loadProject = async (id) => {
     setLoading('project', true);

@@ -1,11 +1,13 @@
 import express from 'express';
-import { projectDb } from '../db.js';
+import { projectDb, messageDb } from '../db.js';
+import { generateGreeting } from '../services/aiService.js';
 
 const router = express.Router();
 
 /**
  * POST /api/projects
  * Create a new project with initialized canvas
+ * Docs FR-01-001: AI generates a greeting message and opening question
  */
 router.post('/', async (req, res, next) => {
   try {
@@ -22,7 +24,33 @@ router.post('/', async (req, res, next) => {
     // Create project (also creates canvas with 10 stages)
     const project = projectDb.create(name || 'Untitled Project');
 
-    res.status(201).json(project);
+    // FR-01-001: AI generates a greeting message and opening question
+    let greetingMessage = null;
+    try {
+      const greetingText = await generateGreeting();
+      greetingMessage = messageDb.create(
+        project.id,
+        'assistant',
+        greetingText,
+        null,
+        1
+      );
+    } catch (error) {
+      console.error('Greeting generation failed (non-critical):', error);
+      // Fallback greeting if AI fails
+      greetingMessage = messageDb.create(
+        project.id,
+        'assistant',
+        "Hi! I'm here to help you transform your idea into a clear project direction. What would you like to build?",
+        null,
+        1
+      );
+    }
+
+    res.status(201).json({
+      ...project,
+      greeting: greetingMessage
+    });
   } catch (error) {
     next({
       statusCode: 500,

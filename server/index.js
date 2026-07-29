@@ -1,10 +1,15 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { initializeDatabase } from './db.js';
 import projectsRouter from './routes/projects.js';
 import chatRouter from './routes/chat.js';
 import blueprintRouter from './routes/blueprint.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -57,11 +62,28 @@ app.use((err, req, res, next) => {
   });
 });
 
-// 404 handler
-app.use((req, res) => {
-  res.status(404).json({
-    error: 'Endpoint not found',
-    code: 'NOT_FOUND'
+// Static file serving for single-service deployment (docs/06 §6.1)
+// Serve React build from ../dist
+const distPath = path.join(__dirname, '../dist');
+app.use(express.static(distPath));
+
+// SPA fallback: serve index.html for non-API routes (React Router)
+app.get('*', (req, res, next) => {
+  // Skip API routes
+  if (req.path.startsWith('/api/')) {
+    return res.status(404).json({
+      error: 'Endpoint not found',
+      code: 'NOT_FOUND'
+    });
+  }
+  res.sendFile(path.join(distPath, 'index.html'), (err) => {
+    if (err) {
+      // dist/ doesn't exist (dev mode) — return 404 JSON
+      res.status(404).json({
+        error: 'Frontend build not found. Run "npm run build" first.',
+        code: 'NOT_FOUND'
+      });
+    }
   });
 });
 
