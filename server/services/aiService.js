@@ -9,12 +9,12 @@ import buildConversationPrompt from '../prompts/converse.js';
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 // Model configuration
-const MODEL_NAME = 'gemini-3.1-flash';
+const MODEL_NAME = 'gemini-3.5-flash-lite';
 const GENERATION_CONFIG = {
-  temperature: 0.7,
-  topK: 40,
+  temperature: 0.75,
+  topK: 50,
   topP: 0.95,
-  maxOutputTokens: 2048,
+  maxOutputTokens: 2560,
 };
 
 /**
