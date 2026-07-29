@@ -129,6 +129,7 @@ export const api = {
     generate: (projectId) => 
       fetchAPI(`/blueprint/${projectId}`, {
         method: 'POST',
+        body: JSON.stringify({ approve: true }),
       }),
 
     /**

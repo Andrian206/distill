@@ -17,8 +17,10 @@ const GENERATION_CONFIG = {
 
 /**
  * Call Gemini API with retry logic
+ * Docs: "Gemini returns invalid JSON → Retry once"
  */
-async function callGemini(prompt, isJsonMode = false) {
+async function callGemini(prompt, isJsonMode = false, retryCount = 0) {
+  const MAX_RETRIES = 1;
   const model = genAI.getGenerativeModel({ 
     model: MODEL_NAME,
     generationConfig: GENERATION_CONFIG,
@@ -40,40 +42,46 @@ async function callGemini(prompt, isJsonMode = false) {
     return text;
   } catch (error) {
     console.error('Gemini API Error:', error.message);
+    
+    // Retry once on failure (as per docs)
+    if (retryCount < MAX_RETRIES) {
+      console.log(`Retrying Gemini API call (attempt ${retryCount + 2})...`);
+      return callGemini(prompt, isJsonMode, retryCount + 1);
+    }
+    
     throw new Error(`AI service error: ${error.message}`);
   }
 }
 
 /**
  * Extract structured information from user message (Prompt A)
+ * Docs: "Gemini returns invalid JSON → Retry once"
  */
 export async function extractInformation(userMessage, canvasState) {
-  const prompt = buildExtractionPrompt(userMessage, canvasState);
+  // Limit canvas context: only send last 5 messages worth of context
+  // and compact canvas state (not full chat history)
+  const compactCanvas = limitCanvasContext(canvasState);
+  const prompt = buildExtractionPrompt(userMessage, compactCanvas);
   
   try {
     const response = await callGemini(prompt, true);
     
-    // Parse JSON response
+    // Parse JSON response with retry
     const jsonMatch = response.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      console.warn('No JSON found in extraction response, returning empty structure');
-      return {
-        updates: {},
-        impact: { affected_stages: [] },
-        missing_stages: [],
-        target_stage: 'idea',
-      };
+      console.warn('No JSON found in extraction response, retrying...');
+      // Retry once as per docs
+      const retryResponse = await callGemini(prompt, true, 1);
+      const retryJsonMatch = retryResponse.match(/\{[\s\S]*\}/);
+      if (!retryJsonMatch) {
+        throw new Error('No JSON found after retry');
+      }
+      const extracted = JSON.parse(retryJsonMatch[0]);
+      return validateExtractionResult(extracted);
     }
 
     const extracted = JSON.parse(jsonMatch[0]);
-    
-    // Validate structure
-    if (!extracted.updates) extracted.updates = {};
-    if (!extracted.impact) extracted.impact = { affected_stages: [] };
-    if (!extracted.missing_stages) extracted.missing_stages = [];
-    if (!extracted.target_stage) extracted.target_stage = 'idea';
-
-    return extracted;
+    return validateExtractionResult(extracted);
   } catch (error) {
     console.error('Extraction error:', error);
     // Return safe default structure
@@ -84,6 +92,41 @@ export async function extractInformation(userMessage, canvasState) {
       target_stage: 'idea',
     };
   }
+}
+
+/**
+ * Validate and normalize extraction result
+ */
+function validateExtractionResult(extracted) {
+  if (!extracted.updates) extracted.updates = {};
+  if (!extracted.impact) extracted.impact = { affected_stages: [] };
+  if (!extracted.missing_stages) extracted.missing_stages = [];
+  if (!extracted.target_stage) extracted.target_stage = 'idea';
+  if (extracted.off_topic === undefined) extracted.off_topic = false;
+  if (!extracted.redirect_message) extracted.redirect_message = '';
+  return extracted;
+}
+
+/**
+ * Limit canvas context to compact form (not full chat history)
+ * Docs: "Canvas state sent as compact JSON (not full chat history)"
+ */
+function limitCanvasContext(canvasState) {
+  if (!canvasState || !canvasState.stages) {
+    return canvasState;
+  }
+
+  // Return compact version: only status, summary, confidence, and item count
+  return {
+    id: canvasState.id,
+    stages: canvasState.stages.map(stage => ({
+      name: stage.name,
+      status: stage.status,
+      summary: stage.summary,
+      confidence: stage.confidence,
+      item_count: stage.items ? stage.items.length : 0,
+    })),
+  };
 }
 
 /**

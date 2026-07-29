@@ -1,7 +1,7 @@
 import express from 'express';
 import { projectDb, messageDb, canvasDb } from '../db.js';
 import { extractInformation, generateResponse } from '../services/aiService.js';
-import { mergeCanvasUpdates, detectImpact } from '../services/canvasService.js';
+import { mergeCanvasUpdates, detectImpact, applyImpact } from '../services/canvasService.js';
 
 const router = express.Router();
 
@@ -48,13 +48,14 @@ router.post('/', async (req, res, next) => {
     const messages = messageDb.getByProjectId(project_id);
     const turnNumber = messages.length + 1;
 
-    // Save user message
-    const userMessage = messageDb.create({
+    // Save user message (positional args: projectId, role, content, structuredData, turnNumber)
+    const userMessage = messageDb.create(
       project_id,
-      role: 'user',
-      content: message.trim(),
-      turn_number: turnNumber
-    });
+      'user',
+      message.trim(),
+      null,
+      turnNumber
+    );
 
     // STEP 1: Extract information from user message (Prompt A)
     let extractedInfo;
@@ -69,6 +70,31 @@ router.post('/', async (req, res, next) => {
       });
     }
 
+    // FR-02-004: Handle off-topic messages
+    if (extractedInfo.off_topic) {
+      const redirectResponse = extractedInfo.redirect_message || 
+        "Let's focus on your project. Could you tell me more about what you're trying to build?";
+
+      // Save AI redirect message
+      const redirectMessage = messageDb.create(
+        project_id,
+        'assistant',
+        redirectResponse,
+        null,
+        turnNumber + 1
+      );
+
+      return res.json({
+        message: redirectMessage,
+        canvas: project.canvas,
+        canvas_updates: {},
+        impact: [],
+        applied_impact: [],
+        merge_result: { updated: [], errors: [] },
+        off_topic: true
+      });
+    }
+
     // STEP 2: Merge updates into canvas
     const mergeResult = await mergeCanvasUpdates(
       project.canvas.id,
@@ -76,22 +102,32 @@ router.post('/', async (req, res, next) => {
     );
 
     // STEP 3: Detect impact on other stages
-    const impactResult = await detectImpact(
-      project.canvas.id,
-      extractedInfo.updates
+    const impactResult = detectImpact(
+      extractedInfo.updates,
+      project.canvas
     );
+
+    // STEP 3b: Apply impact to database (set affected stages to needs_review)
+    let appliedImpact = [];
+    if (impactResult.length > 0) {
+      appliedImpact = await applyImpact(project.canvas.id, impactResult);
+    }
 
     // STEP 4: Get updated canvas state
     const updatedProject = projectDb.getById(project_id);
 
+    // Determine target stage for next question
+    const targetStage = extractedInfo.target_stage || 'idea';
+
     // STEP 5: Generate natural response (Prompt B)
+    // Signature: generateResponse(userMessage, canvasState, targetStage, extractionResult)
     let aiResponse;
     try {
       aiResponse = await generateResponse(
         message,
         updatedProject.canvas,
-        extractedInfo,
-        impactResult
+        targetStage,
+        extractedInfo
       );
     } catch (error) {
       console.error('AI response generation error:', error);
@@ -102,13 +138,14 @@ router.post('/', async (req, res, next) => {
       });
     }
 
-    // STEP 6: Save AI message
-    const assistantMessage = messageDb.create({
+    // STEP 6: Save AI message (positional args: projectId, role, content, structuredData, turnNumber)
+    const assistantMessage = messageDb.create(
       project_id,
-      role: 'assistant',
-      content: aiResponse,
-      turn_number: turnNumber + 1
-    });
+      'assistant',
+      aiResponse,
+      null,
+      turnNumber + 1
+    );
 
     // Return response with canvas updates
     res.json({
@@ -116,7 +153,9 @@ router.post('/', async (req, res, next) => {
       canvas: updatedProject.canvas,
       canvas_updates: extractedInfo.updates,
       impact: impactResult,
-      merge_result: mergeResult
+      applied_impact: appliedImpact,
+      merge_result: mergeResult,
+      off_topic: false
     });
 
   } catch (error) {

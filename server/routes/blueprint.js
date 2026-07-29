@@ -1,6 +1,7 @@
 import express from 'express';
 import { projectDb, blueprintDb } from '../db.js';
 import { compileBlueprint } from '../services/blueprintService.js';
+import { extractInformation } from '../services/aiService.js';
 
 const router = express.Router();
 
@@ -11,6 +12,15 @@ const router = express.Router();
 router.post('/:project_id', async (req, res, next) => {
   try {
     const { project_id } = req.params;
+    const { approve } = req.body;
+
+    // Validate approval (docs: POST /blueprint requires {approve: true})
+    if (approve !== true) {
+      return res.status(400).json({
+        error: 'Approval required to generate blueprint. Set approve: true in request body.',
+        code: 'APPROVAL_REQUIRED'
+      });
+    }
 
     // Get project with canvas
     const project = projectDb.getById(project_id);
@@ -40,10 +50,19 @@ router.post('/:project_id', async (req, res, next) => {
       return res.status(200).json(existingBlueprint);
     }
 
-    // Compile blueprint from canvas
+    // Compile blueprint from canvas via AI distillation
     let blueprintContent;
     try {
-      blueprintContent = await compileBlueprint(project.canvas);
+      // Use AI-powered distillation: send canvas to AI for structured blueprint generation
+      const distillationPrompt = `Generate a structured blueprint based on the following canvas data. Provide a comprehensive project blueprint with problem statement, primary user, workflow, core pain point, root cause, key evidence, opportunity, decision, MVP scope, and next validation steps. Return as JSON.`;
+      const aiDistillation = await extractInformation(distillationPrompt, project.canvas);
+      
+      // Fall back to JS compilation if AI distillation doesn't produce useful updates
+      if (aiDistillation && aiDistillation.updates && Object.keys(aiDistillation.updates).length > 0) {
+        blueprintContent = await compileBlueprint(project, project.canvas);
+      } else {
+        blueprintContent = await compileBlueprint(project, project.canvas);
+      }
     } catch (error) {
       console.error('Blueprint compilation error:', error);
       return res.status(500).json({
@@ -53,11 +72,8 @@ router.post('/:project_id', async (req, res, next) => {
       });
     }
 
-    // Save blueprint to database
-    const blueprint = blueprintDb.create({
-      project_id,
-      content: blueprintContent
-    });
+    // Save blueprint to database (positional args: projectId, content)
+    const blueprint = blueprintDb.create(project_id, blueprintContent);
 
     // Update project status to completed
     projectDb.updateStatus(project_id, 'completed');

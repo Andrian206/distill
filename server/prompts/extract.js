@@ -46,7 +46,9 @@ Return ONLY valid JSON in this exact structure:
     ]
   },
   "missing_stages": ["stage_name"],
-  "target_stage": "stage_name_for_next_question"
+  "target_stage": "stage_name_for_next_question",
+  "off_topic": false,
+  "redirect_message": ""
 }
 
 ## Rules
@@ -60,6 +62,8 @@ Return ONLY valid JSON in this exact structure:
 8. Select ONE target_stage for the next question (prioritize by order)
 9. Do NOT invent information not present in the user's message
 10. Return ONLY the JSON object, no markdown, no explanation
+11. **Off-topic detection**: If the user's message is completely unrelated to the project (e.g., asking about weather, coding help, general knowledge), set "off_topic" to true and provide a "redirect_message" suggesting they refocus on their project. Do NOT extract any updates for off-topic messages.
+12. **Off-topic indicator**: If the message asks for code, business plans, or unrelated advice, treat it as off-topic.
 
 Extract now:`;
 }
