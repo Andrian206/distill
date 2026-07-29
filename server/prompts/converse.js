@@ -26,6 +26,11 @@ Generate a natural conversation response that:
 2. Provides brief feedback if relevant (optional, 1 sentence)
 3. Asks ONE focused question about the target stage (1 question)
 
+## Language Instruction
+**CRITICAL: Detect the language of the user's message and respond in the SAME language.**
+User's message: "${userMessage}"
+Your response MUST be in the same language as the user's message above.
+
 ## Response Guidelines
 - Keep total response under 3 sentences
 - Ask exactly ONE primary question
@@ -35,6 +40,7 @@ Generate a natural conversation response that:
 - Challenge assumptions gently when appropriate
 - Focus on evidence and facts, not opinions
 - If user is off-topic, gently redirect to discovery
+- Match the user's language automatically (Indonesian, English, or any other)
 
 ## Example Good Responses
 

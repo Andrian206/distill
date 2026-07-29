@@ -5,11 +5,20 @@ import buildDistillationPrompt from '../prompts/distill.js';
 import buildBlueprintPrompt from '../prompts/blueprint.js';
 import buildConversationPrompt from '../prompts/converse.js';
 
+// Validate API key on startup
+if (!process.env.GEMINI_API_KEY) {
+  console.error('❌ GEMINI_API_KEY environment variable is not set!');
+  console.error('Please set it in your .env file or environment variables.');
+  throw new Error('GEMINI_API_KEY is required but not configured');
+}
+
+console.log('✅ Gemini API key detected');
+
 // Initialize Gemini API
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 // Model configuration
-const MODEL_NAME = 'gemini-3.5-flash-lite';
+const MODEL_NAME = 'gemini-3.1-flash-lite';
 const GENERATION_CONFIG = {
   temperature: 0.75,
   topK: 50,

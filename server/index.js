@@ -8,6 +8,17 @@ import blueprintRouter from './routes/blueprint.js';
 const app = express();
 const PORT = process.env.PORT || 10000;
 
+// Validate required environment variables
+const requiredEnvVars = ['GEMINI_API_KEY'];
+const missingVars = requiredEnvVars.filter(v => !process.env[v]);
+
+if (missingVars.length > 0) {
+  console.error('❌ Missing required environment variables:', missingVars.join(', '));
+  console.error('Please set them before starting the server.');
+  console.error('Example: export GEMINI_API_KEY=your_api_key_here');
+  process.exit(1);
+}
+
 // Initialize database
 initializeDatabase();
 
@@ -35,10 +46,10 @@ app.get('/api/health', (req, res) => {
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error('Error:', err);
-  
+
   const statusCode = err.statusCode || 500;
   const errorCode = err.code || 'INTERNAL_ERROR';
-  
+
   res.status(statusCode).json({
     error: err.message || 'An unexpected error occurred',
     code: errorCode
