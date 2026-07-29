@@ -1,13 +1,15 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import SYSTEM_PROMPT from '../prompts/system.js';
 import buildExtractionPrompt from '../prompts/extract.js';
+import buildDistillationPrompt from '../prompts/distill.js';
+import buildBlueprintPrompt from '../prompts/blueprint.js';
 import buildConversationPrompt from '../prompts/converse.js';
 
 // Initialize Gemini API
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 // Model configuration
-const MODEL_NAME = 'gemini-1.5-flash';
+const MODEL_NAME = 'gemini-3.1-flash';
 const GENERATION_CONFIG = {
   temperature: 0.7,
   topK: 40,
@@ -21,7 +23,7 @@ const GENERATION_CONFIG = {
  */
 async function callGemini(prompt, isJsonMode = false, retryCount = 0) {
   const MAX_RETRIES = 1;
-  const model = genAI.getGenerativeModel({ 
+  const model = genAI.getGenerativeModel({
     model: MODEL_NAME,
     generationConfig: GENERATION_CONFIG,
   });
@@ -42,13 +44,13 @@ async function callGemini(prompt, isJsonMode = false, retryCount = 0) {
     return text;
   } catch (error) {
     console.error('Gemini API Error:', error.message);
-    
+
     // Retry once on failure (as per docs)
     if (retryCount < MAX_RETRIES) {
       console.log(`Retrying Gemini API call (attempt ${retryCount + 2})...`);
       return callGemini(prompt, isJsonMode, retryCount + 1);
     }
-    
+
     throw new Error(`AI service error: ${error.message}`);
   }
 }
@@ -62,10 +64,10 @@ export async function extractInformation(userMessage, canvasState) {
   // and compact canvas state (not full chat history)
   const compactCanvas = limitCanvasContext(canvasState);
   const prompt = buildExtractionPrompt(userMessage, compactCanvas);
-  
+
   try {
     const response = await callGemini(prompt, true);
-    
+
     // Parse JSON response with retry
     const jsonMatch = response.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
@@ -131,10 +133,15 @@ function limitCanvasContext(canvasState) {
 
 /**
  * Generate natural conversation response (Prompt B)
+ * @param {string} userMessage - Current user message
+ * @param {object} canvasState - Current canvas state
+ * @param {string} targetStage - Target stage for next question
+ * @param {object} extractionResult - Extraction result from Prompt A
+ * @param {array} recentMessages - Last 5 messages for context (docs §7.10)
  */
-export async function generateResponse(userMessage, canvasState, targetStage, extractionResult) {
-  const prompt = buildConversationPrompt(userMessage, canvasState, targetStage, extractionResult);
-  
+export async function generateResponse(userMessage, canvasState, targetStage, extractionResult, recentMessages = []) {
+  const prompt = buildConversationPrompt(userMessage, canvasState, targetStage, extractionResult, recentMessages);
+
   try {
     const response = await callGemini(prompt, false);
     return response.trim();
@@ -231,3 +238,77 @@ export default {
 };
 
 // Made with Bob
+
+/**
+ * Distill canvas using AI
+ * Docs §7.7: Reviews all stages, merges duplicates, identifies contradictions
+ */
+export async function distillCanvas(canvas) {
+  const prompt = buildDistillationPrompt(canvas);
+
+  try {
+    const response = await callGemini(prompt, true);
+
+    // Extract JSON from response
+    const jsonMatch = response.match(/```json\s*([\s\S]*?)\s*```/) ||
+      response.match(/\{[\s\S]*\}/);
+
+    if (!jsonMatch) {
+      throw new Error('No JSON found in distillation response');
+    }
+
+    const jsonText = jsonMatch[1] || jsonMatch[0];
+    const result = JSON.parse(jsonText);
+
+    // Validate structure
+    if (!result.distilled || typeof result.distilled !== 'object') {
+      throw new Error('Invalid distillation result structure');
+    }
+
+    return result;
+  } catch (error) {
+    console.error('Distillation error:', error);
+    throw new Error(`Failed to distill canvas: ${error.message}`);
+  }
+}
+
+/**
+ * Compile blueprint using AI
+ * Docs §7.8: Compiles 11-section blueprint from distilled canvas
+ */
+export async function compileBlueprintWithAI(project, canvas) {
+  const prompt = buildBlueprintPrompt(project, canvas);
+
+  try {
+    const response = await callGemini(prompt, true);
+
+    // Extract JSON from response
+    const jsonMatch = response.match(/```json\s*([\s\S]*?)\s*```/) ||
+      response.match(/\{[\s\S]*\}/);
+
+    if (!jsonMatch) {
+      throw new Error('No JSON found in blueprint response');
+    }
+
+    const jsonText = jsonMatch[1] || jsonMatch[0];
+    const result = JSON.parse(jsonText);
+
+    // Validate required fields
+    const requiredFields = [
+      'project_name', 'problem_statement', 'primary_user',
+      'workflow', 'core_pain_point', 'root_cause', 'key_evidence',
+      'opportunity', 'decision', 'mvp_scope', 'next_validation'
+    ];
+
+    for (const field of requiredFields) {
+      if (!(field in result)) {
+        throw new Error(`Missing required field: ${field}`);
+      }
+    }
+
+    return result;
+  } catch (error) {
+    console.error('Blueprint compilation error:', error);
+    throw new Error(`Failed to compile blueprint: ${error.message}`);
+  }
+}

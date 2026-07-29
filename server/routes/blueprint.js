@@ -1,7 +1,7 @@
 import express from 'express';
 import { projectDb, blueprintDb } from '../db.js';
-import { compileBlueprint } from '../services/blueprintService.js';
-import { extractInformation } from '../services/aiService.js';
+import { compileBlueprint, detectContradictions } from '../services/blueprintService.js';
+import { distillCanvas, compileBlueprintWithAI } from '../services/aiService.js';
 
 const router = express.Router();
 
@@ -50,26 +50,68 @@ router.post('/:project_id', async (req, res, next) => {
       return res.status(200).json(existingBlueprint);
     }
 
-    // Compile blueprint from canvas via AI distillation
-    let blueprintContent;
+    // STEP 1: Detect contradictions (BR-15: must be resolved before blueprint)
+    const contradictions = detectContradictions(project.canvas);
+    if (contradictions.length > 0) {
+      return res.status(400).json({
+        error: 'Cannot generate blueprint: contradictions detected',
+        code: 'CONTRADICTIONS_FOUND',
+        contradictions: contradictions
+      });
+    }
+
+    // STEP 2: Distill canvas using AI (Docs §7.7)
+    let distilledCanvas;
     try {
-      // Use AI-powered distillation: send canvas to AI for structured blueprint generation
-      const distillationPrompt = `Generate a structured blueprint based on the following canvas data. Provide a comprehensive project blueprint with problem statement, primary user, workflow, core pain point, root cause, key evidence, opportunity, decision, MVP scope, and next validation steps. Return as JSON.`;
-      const aiDistillation = await extractInformation(distillationPrompt, project.canvas);
-      
-      // Fall back to JS compilation if AI distillation doesn't produce useful updates
-      if (aiDistillation && aiDistillation.updates && Object.keys(aiDistillation.updates).length > 0) {
-        blueprintContent = await compileBlueprint(project, project.canvas);
-      } else {
-        blueprintContent = await compileBlueprint(project, project.canvas);
+      const distillationResult = await distillCanvas(project.canvas);
+
+      // Apply distilled summaries to canvas
+      distilledCanvas = {
+        ...project.canvas,
+        stages: project.canvas.stages.map(stage => {
+          const distilled = distillationResult.distilled[stage.name];
+          if (distilled) {
+            return {
+              ...stage,
+              summary: distilled.summary,
+              confidence: distilled.confidence,
+            };
+          }
+          return stage;
+        }),
+      };
+
+      // Check for contradictions from AI
+      if (distillationResult.contradictions && distillationResult.contradictions.length > 0) {
+        return res.status(400).json({
+          error: 'Contradictions found during distillation',
+          code: 'CONTRADICTIONS_FOUND',
+          contradictions: distillationResult.contradictions
+        });
       }
     } catch (error) {
-      console.error('Blueprint compilation error:', error);
-      return res.status(500).json({
-        error: 'Failed to compile blueprint',
-        code: 'AI_ERROR',
-        details: error.message
-      });
+      console.error('Distillation error:', error);
+      // Fallback to original canvas if distillation fails
+      distilledCanvas = project.canvas;
+    }
+
+    // STEP 3: Compile blueprint using AI (Docs §7.8)
+    let blueprintContent;
+    try {
+      blueprintContent = await compileBlueprintWithAI(project, distilledCanvas);
+    } catch (error) {
+      console.error('AI blueprint compilation error:', error);
+      // Fallback to JS compilation
+      try {
+        blueprintContent = await compileBlueprint(project, distilledCanvas);
+      } catch (fallbackError) {
+        console.error('Fallback compilation error:', fallbackError);
+        return res.status(500).json({
+          error: 'Failed to compile blueprint',
+          code: 'AI_ERROR',
+          details: error.message
+        });
+      }
     }
 
     // Save blueprint to database (positional args: projectId, content)

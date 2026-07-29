@@ -1,12 +1,15 @@
 // Prompt B: Conversation Response
 // Generates natural language responses with focused questions
 
-export function buildConversationPrompt(userMessage, canvasState, targetStage, extractionResult) {
+export function buildConversationPrompt(userMessage, canvasState, targetStage, extractionResult, recentMessages = []) {
   const canvasContext = formatCanvasForPrompt(canvasState);
   const updatesContext = formatUpdatesForPrompt(extractionResult);
   const stageGuidance = getStageGuidance(targetStage);
+  const conversationHistory = formatRecentMessages(recentMessages);
 
   return `${canvasContext}
+
+${conversationHistory}
 
 ## User's Last Message
 "${userMessage}"
@@ -104,6 +107,25 @@ function getStageGuidance(stageName) {
   };
 
   return guidance[stageName] || 'Continue the discovery process.';
+}
+
+/**
+ * Format recent messages for conversation context
+ * Docs §7.10: Only last 5 messages included in prompt context
+ */
+function formatRecentMessages(messages) {
+  if (!messages || messages.length === 0) {
+    return '## Recent Conversation\n(No previous messages)';
+  }
+
+  const formatted = messages
+    .map(msg => {
+      const role = msg.role === 'user' ? 'User' : 'Assistant';
+      return `${role}: "${msg.content}"`;
+    })
+    .join('\n');
+
+  return `## Recent Conversation (Last ${messages.length} messages)\n${formatted}`;
 }
 
 export default buildConversationPrompt;

@@ -44,9 +44,12 @@ router.post('/', async (req, res, next) => {
       });
     }
 
-    // Get current turn number
-    const messages = messageDb.getByProjectId(project_id);
-    const turnNumber = messages.length + 1;
+    // Get chat history (all messages for turn number calculation)
+    const allMessages = messageDb.getByProjectId(project_id);
+    const turnNumber = allMessages.length + 1;
+
+    // Limit to last 5 messages for AI context (docs §7.10)
+    const recentMessages = allMessages.slice(-5);
 
     // Save user message (positional args: projectId, role, content, structuredData, turnNumber)
     const userMessage = messageDb.create(
@@ -72,7 +75,7 @@ router.post('/', async (req, res, next) => {
 
     // FR-02-004: Handle off-topic messages
     if (extractedInfo.off_topic) {
-      const redirectResponse = extractedInfo.redirect_message || 
+      const redirectResponse = extractedInfo.redirect_message ||
         "Let's focus on your project. Could you tell me more about what you're trying to build?";
 
       // Save AI redirect message
@@ -120,14 +123,16 @@ router.post('/', async (req, res, next) => {
     const targetStage = extractedInfo.target_stage || 'idea';
 
     // STEP 5: Generate natural response (Prompt B)
-    // Signature: generateResponse(userMessage, canvasState, targetStage, extractionResult)
+    // Pass recent messages for context (docs §7.10: last 5 messages)
+    // Signature: generateResponse(userMessage, canvasState, targetStage, extractionResult, recentMessages)
     let aiResponse;
     try {
       aiResponse = await generateResponse(
         message,
         updatedProject.canvas,
         targetStage,
-        extractedInfo
+        extractedInfo,
+        recentMessages
       );
     } catch (error) {
       console.error('AI response generation error:', error);
