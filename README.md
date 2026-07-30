@@ -322,8 +322,6 @@ distill/
 ├── server/                   # Backend (Express)
 │   ├── index.js
 │   ├── db.js
-│   ├── migrations/
-│   │   └── 001_initial_schema.sql
 │   ├── routes/
 │   │   ├── projects.js
 │   │   ├── chat.js

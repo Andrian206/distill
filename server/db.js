@@ -190,8 +190,63 @@ const STAGE_DEFINITIONS = [
   { name: 'mvp', order: 9, icon: '🚀', label: 'MVP' },
 ];
 
-// Project CRUD operations
+// ============================================================================
+// Utility Functions
+// ============================================================================
+
+/**
+ * Parses a JSON field from database result
+ * @param {string|null} value - JSON string or null
+ * @returns {any|null} Parsed object or null/empty array
+ */
+function parseJsonField(value) {
+  if (!value) {
+    return Array.isArray(value) ? [] : null;
+  }
+  try {
+    return JSON.parse(value);
+  } catch (error) {
+    console.error('❌ JSON parse error:', error);
+    return null;
+  }
+}
+
+// ============================================================================
+// Database Query Helpers
+// ============================================================================
+
+/**
+ * Execute a query and return all results
+ * @param {string} sql - SQL query
+ * @param {array} params - Query parameters
+ * @returns {array} Query results
+ */
+function query(sql, params = []) {
+  const stmt = db.prepare(sql);
+  return stmt.all(...params);
+}
+
+/**
+ * Execute a query and return single result
+ * @param {string} sql - SQL query
+ * @param {array} params - Query parameters
+ * @returns {object|null} Single result or null
+ */
+function queryOne(sql, params = []) {
+  const stmt = db.prepare(sql);
+  return stmt.get(...params);
+}
+
+// ============================================================================
+// Project CRUD Operations
+// ============================================================================
+
 export const projectDb = {
+  /**
+   * Creates a new project with canvas and 10 stages
+   * @param {string} name - Project name
+   * @returns {object} Created project with canvas
+   */
   create(name = 'Untitled Project') {
     const projectId = randomUUID();
     const canvasId = randomUUID();
@@ -228,46 +283,13 @@ export const projectDb = {
     return { id: projectId, name, status: 'discovering', canvas_id: canvasId };
   },
 
+  /**
+   * Retrieves a project by ID with its canvas and stages
+   * @param {string} projectId - Project ID
+   * @returns {object|null} Project object with canvas and stages, or null if not found
+   */
   getById(projectId) {
-    const project = db.prepare(`
-      SELECT p.*, c.id as canvas_id
-      FROM projects p
-      LEFT JOIN canvases c ON c.project_id = p.id
-      WHERE p.id = ?
-    `).get(projectId);
-
-    if (!project) return null;
-
-    // Get stages with items
-    const stages = db.prepare(`
-      SELECT s.*,
-        (SELECT json_group_array(
-          json_object(
-            'id', si.id,
-            'type', si.type,
-            'content', si.content,
-            'order_index', si.order_index,
-            'evidence_type', si.evidence_type,
-            'confidence_boost', si.confidence_boost
-          )
-        ) FROM stage_items si WHERE si.stage_id = s.id) as items
-      FROM stages s
-      WHERE s.canvas_id = ?
-      ORDER BY s.order_index
-    `).all(project.canvas_id);
-
-    // Parse items JSON
-    stages.forEach(stage => {
-      stage.items = stage.items ? JSON.parse(stage.items) : [];
-    });
-
-    return {
-      ...project,
-      canvas: {
-        id: project.canvas_id,
-        stages,
-      },
-    };
+    return buildProjectWithCanvas(projectId);
   },
 
   getAll() {
@@ -282,12 +304,89 @@ export const projectDb = {
     return db.prepare('DELETE FROM projects WHERE id = ?').run(projectId);
   },
 
+  /**
+   * Updates project status
+   * @param {string} projectId - Project ID
+   * @param {string} status - New status (discovering|distilling|validating|completed)
+   * @returns {object} Database result
+   */
   updateStatus(projectId, status) {
     return db.prepare(`
       UPDATE projects SET status = ? WHERE id = ?
     `).run(status, projectId);
   },
 };
+
+// ============================================================================
+// Project Helper Functions (Internal)
+// ============================================================================
+
+/**
+ * Retrieves project and canvas data
+ * @param {string} projectId - Project ID
+ * @returns {object|null} Project with canvas_id, or null if not found
+ * @private
+ */
+function getProjectWithCanvas(projectId) {
+  return queryOne(`
+    SELECT p.*, c.id as canvas_id
+    FROM projects p
+    LEFT JOIN canvases c ON c.project_id = p.id
+    WHERE p.id = ?
+  `, [projectId]);
+}
+
+/**
+ * Retrieves stages with their items for a canvas
+ * @param {string} canvasId - Canvas ID
+ * @returns {array} Array of stage objects with parsed items
+ * @private
+ */
+function getStagesWithItems(canvasId) {
+  const stages = query(`
+    SELECT s.*,
+      (SELECT json_group_array(
+        json_object(
+          'id', si.id,
+          'type', si.type,
+          'content', si.content,
+          'order_index', si.order_index,
+          'evidence_type', si.evidence_type,
+          'confidence_boost', si.confidence_boost
+        )
+      ) FROM stage_items si WHERE si.stage_id = s.id) as items
+    FROM stages s
+    WHERE s.canvas_id = ?
+    ORDER BY s.order_index
+  `, [canvasId]);
+
+  // Parse items JSON using utility function
+  return stages.map(stage => ({
+    ...stage,
+    items: parseJsonField(stage.items) || []
+  }));
+}
+
+/**
+ * Builds complete project response object
+ * @param {string} projectId - Project ID
+ * @returns {object|null} Complete project with canvas and stages, or null if not found
+ * @private
+ */
+function buildProjectWithCanvas(projectId) {
+  const project = getProjectWithCanvas(projectId);
+  if (!project) return null;
+
+  const stages = getStagesWithItems(project.canvas_id);
+
+  return {
+    ...project,
+    canvas: {
+      id: project.canvas_id,
+      stages,
+    },
+  };
+}
 
 // Canvas operations
 export const canvasDb = {
@@ -370,16 +469,21 @@ export const messageDb = {
     return { id, project_id: projectId, role, content, turn_number: turnNumber };
   },
 
+  /**
+   * Retrieves all messages for a project
+   * @param {string} projectId - Project ID
+   * @returns {array} Array of message objects with parsed structured_data
+   */
   getByProjectId(projectId) {
-    const messages = db.prepare(`
+    const messages = query(`
       SELECT * FROM messages WHERE project_id = ?
       ORDER BY turn_number ASC, timestamp ASC
-    `).all(projectId);
+    `, [projectId]);
 
-    // Parse structured_data
+    // Parse structured_data using utility function
     messages.forEach(msg => {
       if (msg.structured_data) {
-        msg.structured_data = JSON.parse(msg.structured_data);
+        msg.structured_data = parseJsonField(msg.structured_data);
       }
     });
 
@@ -396,6 +500,12 @@ export const messageDb = {
 
 // Blueprint operations
 export const blueprintDb = {
+  /**
+   * Creates a new blueprint
+   * @param {string} projectId - Project ID
+   * @param {object} content - Blueprint content
+   * @returns {object} Created blueprint
+   */
   create(projectId, content) {
     const id = randomUUID();
     db.prepare(`
@@ -405,13 +515,18 @@ export const blueprintDb = {
     return { id, project_id: projectId, content };
   },
 
+  /**
+   * Retrieves a blueprint by project ID
+   * @param {string} projectId - Project ID
+   * @returns {object|null} Blueprint object with parsed content, or null if not found
+   */
   getByProjectId(projectId) {
-    const blueprint = db.prepare(`
+    const blueprint = queryOne(`
       SELECT * FROM blueprints WHERE project_id = ?
-    `).get(projectId);
+    `, [projectId]);
 
     if (blueprint && blueprint.content) {
-      blueprint.content = JSON.parse(blueprint.content);
+      blueprint.content = parseJsonField(blueprint.content);
     }
 
     return blueprint;

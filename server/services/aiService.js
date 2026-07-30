@@ -18,6 +18,10 @@ console.log('✅ Gemini API key detected');
 // Initialize Gemini API
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
+// ============================================================================
+// Configuration
+// ============================================================================
+
 // Model configuration
 const MODEL_NAME = 'gemini-3.1-flash-lite';
 const GENERATION_CONFIG = {
@@ -27,26 +31,66 @@ const GENERATION_CONFIG = {
   maxOutputTokens: 3096,
 };
 
+// ============================================================================
+// Utility Functions
+// ============================================================================
+
 /**
- * Extract valid JSON from AI response text
- * Handles: markdown code blocks, trailing text, nested braces, string literals
- * Returns: parsed JSON object or throws
+ * Error handling wrapper with fallback
+ * @param {function} fn - Async function to execute
+ * @param {any} fallback - Value to return on error
+ * @param {string} errorMessage - Error message prefix
+ * @param {string} context - Context for logging
+ * @returns {Promise<any>} Result or fallback
  */
-function extractJSON(text) {
-  if (!text) throw new Error('Empty text for JSON extraction');
-
-  // Strategy 1: Try markdown code block first (```json ... ```)
-  const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (codeBlockMatch) {
-    const candidate = codeBlockMatch[1].trim();
-    try {
-      return JSON.parse(candidate);
-    } catch (e) {
-      // Fall through to next strategy
-    }
+async function withFallback(fn, fallback, errorMessage = 'Operation failed', context = 'AI Service') {
+  try {
+    return await fn();
+  } catch (error) {
+    console.error(`❌ ${context}: ${errorMessage}`, error);
+    return fallback;
   }
+}
 
-  // Strategy 2: Find first '{' and extract balanced JSON
+/**
+ * Builds a prompt with system prompt and optional JSON mode
+ * @param {string} prompt - User prompt
+ * @param {boolean} isJsonMode - Whether to enforce JSON-only response
+ * @returns {string} Final prompt ready for AI
+ */
+function buildPrompt(prompt, isJsonMode = false) {
+  const combined = `${SYSTEM_PROMPT}\n\n${prompt}`;
+  return isJsonMode
+    ? `${combined}\n\nReturn ONLY valid JSON. No markdown. No explanation.`
+    : combined;
+}
+
+/**
+ * Extracts JSON from markdown code block
+ * @param {string} text - Response text
+ * @returns {object|null} Parsed JSON or null if not found
+ * @private
+ */
+function extractFromCodeBlock(text) {
+  const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (!codeBlockMatch) return null;
+
+  const candidate = codeBlockMatch[1].trim();
+  try {
+    return JSON.parse(candidate);
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * Extracts balanced JSON from text starting with '{'
+ * @param {string} text - Response text
+ * @returns {object} Parsed JSON
+ * @throws {Error} If no JSON found or unbalanced braces
+ * @private
+ */
+function extractBalancedJSON(text) {
   const startIdx = text.indexOf('{');
   if (startIdx === -1) throw new Error('No JSON object found in response');
 
@@ -92,8 +136,38 @@ function extractJSON(text) {
 }
 
 /**
+ * Extract valid JSON from AI response text
+ * Handles: markdown code blocks, trailing text, nested braces, string literals
+ * Returns: parsed JSON object or throws
+ *
+ * @param {string} text - Response text to extract JSON from
+ * @returns {object} Parsed JSON object
+ * @throws {Error} If no valid JSON can be extracted
+ */
+function extractJSON(text) {
+  if (!text) throw new Error('Empty text for JSON extraction');
+
+  // Strategy 1: Try markdown code block first
+  const fromCodeBlock = extractFromCodeBlock(text);
+  if (fromCodeBlock) return fromCodeBlock;
+
+  // Strategy 2: Extract balanced JSON
+  return extractBalancedJSON(text);
+}
+
+/**
  * Call Gemini API with retry logic
  * Docs: "Gemini returns invalid JSON → Retry once"
+ */
+/**
+ * Call Gemini API with retry logic
+ * Docs: "Gemini returns invalid JSON → Retry once"
+ *
+ * @param {string} prompt - User prompt (without system prompt)
+ * @param {boolean} isJsonMode - Whether to enforce JSON-only response
+ * @param {number} retryCount - Current retry attempt (internal use)
+ * @returns {Promise<string>} AI response text
+ * @throws {Error} If all retries fail
  */
 async function callGemini(prompt, isJsonMode = false, retryCount = 0) {
   const MAX_RETRIES = 1;
@@ -103,11 +177,8 @@ async function callGemini(prompt, isJsonMode = false, retryCount = 0) {
   });
 
   try {
-    // For Gemma models, combine system prompt + user prompt in one text
-    // to avoid confusion with multi-part input
-    const combinedPrompt = isJsonMode
-      ? `${SYSTEM_PROMPT}\n\n${prompt}\n\nReturn ONLY valid JSON. No markdown. No explanation.`
-      : `${SYSTEM_PROMPT}\n\n${prompt}`;
+    // Build prompt with system prompt included
+    const combinedPrompt = buildPrompt(prompt, isJsonMode);
 
     const result = await model.generateContent(combinedPrompt);
 
@@ -141,41 +212,64 @@ async function callGemini(prompt, isJsonMode = false, retryCount = 0) {
  * Extract structured information from user message (Prompt A)
  * Docs: "Gemini returns invalid JSON → Retry once"
  */
+/**
+ * Extract structured information from user message (Prompt A)
+ * Docs: "Gemini returns invalid JSON → Retry once"
+ *
+ * @param {string} userMessage - User message to analyze
+ * @param {object} canvasState - Current canvas state
+ * @returns {Promise<object>} Extraction result with updates, impact, and target stage
+ */
+// ============================================================================
+// Core AI Functions
+// ============================================================================
+
 export async function extractInformation(userMessage, canvasState) {
   // Limit canvas context: only send last 5 messages worth of context
   // and compact canvas state (not full chat history)
   const compactCanvas = limitCanvasContext(canvasState);
   const prompt = buildExtractionPrompt(userMessage, compactCanvas);
 
-  try {
-    const response = await callGemini(prompt, true);
+  return withFallback(
+    async () => {
+      const response = await callGemini(prompt, true);
 
-    // Parse JSON response using robust extractJSON (handles trailing text, code blocks)
-    let extracted;
-    try {
-      extracted = extractJSON(response);
-    } catch (jsonError) {
-      console.warn('No valid JSON found in extraction response, retrying...');
-      // Retry once as per docs
-      const retryResponse = await callGemini(prompt, true, 1);
-      extracted = extractJSON(retryResponse);
-    }
+      // Parse JSON response using robust extractJSON (handles trailing text, code blocks)
+      const extracted = await withFallback(
+        () => extractJSON(response),
+        null,
+        'JSON extraction failed, retrying...',
+        'AI Extraction'
+      );
 
-    return validateExtractionResult(extracted);
-  } catch (error) {
-    console.error('Extraction error:', error);
-    // Return safe default structure
-    return {
+      if (!extracted) {
+        // Retry once as per docs
+        const retryResponse = await callGemini(prompt, true, 1);
+        return extractJSON(retryResponse);
+      }
+
+      return validateExtractionResult(extracted);
+    },
+    () => ({
       updates: {},
       impact: { affected_stages: [] },
       missing_stages: [],
       target_stage: 'idea',
-    };
-  }
+    }),
+    'Extraction failed',
+    'AI Extraction'
+  );
 }
+
+// ============================================================================
+// Validation Functions
+// ============================================================================
 
 /**
  * Validate and normalize extraction result
+ *
+ * @param {object} extracted - Raw extraction result
+ * @returns {object} Normalized extraction result with all required fields
  */
 function validateExtractionResult(extracted) {
   if (!extracted.updates) extracted.updates = {};
@@ -187,9 +281,16 @@ function validateExtractionResult(extracted) {
   return extracted;
 }
 
+// ============================================================================
+// Context Management
+// ============================================================================
+
 /**
  * Limit canvas context to compact form (not full chat history)
  * Docs: "Canvas state sent as compact JSON (not full chat history)"
+ *
+ * @param {object} canvasState - Full canvas state
+ * @returns {object} Compact canvas state for AI context
  */
 function limitCanvasContext(canvasState) {
   if (!canvasState || !canvasState.stages) {
@@ -218,18 +319,30 @@ function limitCanvasContext(canvasState) {
  * @param {array} recentMessages - Last 5 messages for context (docs §7.10)
  * @param {string} [composedPrompt] - Optional pre-composed prompt from promptComposer (docs/11)
  */
+/**
+ * Generate natural conversation response (Prompt B)
+ *
+ * @param {string} userMessage - Current user message
+ * @param {object} canvasState - Current canvas state
+ * @param {string} targetStage - Target stage for next question
+ * @param {object} extractionResult - Extraction result from Prompt A
+ * @param {array} recentMessages - Last 5 messages for context (docs §7.10)
+ * @param {string} [composedPrompt] - Optional pre-composed prompt from promptComposer (docs/11)
+ * @returns {Promise<string>} AI response text
+ */
 export async function generateResponse(userMessage, canvasState, targetStage, extractionResult, recentMessages = [], composedPrompt = null) {
   // Use composed prompt if provided (dynamic composition per docs/11), else fall back to static prompt
   const prompt = composedPrompt || buildConversationPrompt(userMessage, canvasState, targetStage, extractionResult, recentMessages);
 
-  try {
-    const response = await callGemini(prompt, false);
-    return response.trim();
-  } catch (error) {
-    console.error('Response generation error:', error);
-    // Fallback response
-    return "I understand. Could you tell me more about that?";
-  }
+  return withFallback(
+    async () => {
+      const response = await callGemini(prompt, false);
+      return response.trim();
+    },
+    "I understand. Could you tell me more about that?",
+    'Response generation failed',
+    'AI Response'
+  );
 }
 
 /**
@@ -300,6 +413,10 @@ export function validateExtraction(extraction) {
 /**
  * Test Gemini API connection
  */
+// ============================================================================
+// Additional AI Operations
+// ============================================================================
+
 export async function testConnection() {
   try {
     const response = await callGemini('Respond with "OK" if you can read this.', false);

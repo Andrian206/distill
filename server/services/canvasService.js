@@ -1,8 +1,14 @@
 import { canvasDb, stageItemDb } from '../db.js';
 import { calculateStageConfidence, calculateCanvasConfidence } from './confidenceEngine.js';
 
+// ============================================================================
+// Configuration
+// ============================================================================
+
 /**
  * Impact detection rules based on stage dependencies
+ * Defines which stages are affected when a stage changes
+ * Format: { [sourceStage]: [affectedStage1, affectedStage2, ...] }
  */
 const IMPACT_RULES = {
   user: ['workflow', 'pain_point', 'opportunity'],
@@ -13,8 +19,17 @@ const IMPACT_RULES = {
   workflow: ['pain_point'],
 };
 
+// ============================================================================
+// Core Canvas Functions
+// ============================================================================
+
 /**
  * Merge AI extraction updates into canvas
+ * Applies stage updates, creates items, and recalculates confidence
+ *
+ * @param {string} canvasId - Canvas ID
+ * @param {object} updates - Stage updates from AI extraction
+ * @returns {Promise<object>} Result with updated stages and errors
  */
 export async function mergeCanvasUpdates(canvasId, updates) {
   if (!updates || Object.keys(updates).length === 0) {
@@ -137,8 +152,17 @@ export function detectImpact(updates, currentCanvas) {
   return affectedStages;
 }
 
+// ============================================================================
+// Impact Detection Functions
+// ============================================================================
+
 /**
  * Apply impact detection results to canvas
+ * Marks affected stages as needing review
+ *
+ * @param {string} canvasId - Canvas ID
+ * @param {array} affectedStages - List of stages to mark for review
+ * @returns {Promise<array>} Results of impact application
  */
 export async function applyImpact(canvasId, affectedStages) {
   const results = [];
@@ -166,8 +190,16 @@ export async function applyImpact(canvasId, affectedStages) {
   return results;
 }
 
+// ============================================================================
+// Stage Status Functions
+// ============================================================================
+
 /**
  * Determine stage status based on content
+ * Calculates status from items and summary
+ *
+ * @param {object} stage - Stage object
+ * @returns {string} Status (not_started|partial|complete)
  */
 export function determineStageStatus(stage) {
   if (!stage.summary && (!stage.items || stage.items.length === 0)) {
@@ -213,8 +245,16 @@ export function checkCompletion(canvas) {
   };
 }
 
+// ============================================================================
+// Completion Tracking Functions
+// ============================================================================
+
 /**
  * Identify missing or incomplete stages
+ * Returns stages that need work, sorted by order
+ *
+ * @param {object} canvas - Canvas object
+ * @returns {array} List of stage names needing attention
  */
 export function identifyMissingStages(canvas) {
   if (!canvas || !canvas.stages) {
@@ -264,9 +304,14 @@ export function selectTargetStage(canvas, missingStages) {
   return 'idea';
 }
 
+// ============================================================================
+// Stage Navigation Functions
+// ============================================================================
+
 /**
  * Select next stage with stage lock mechanism
  * Locked stages (complete with confidence >= 80%) are skipped
+ *
  * @param {object} canvas - Canvas state
  * @returns {string|null} Next stage name or null if all locked
  */
@@ -338,8 +383,17 @@ export function unlockStage(stageId) {
   };
 }
 
+// ============================================================================
+// Stage Management Utilities
+// ============================================================================
+
 /**
  * Validate stage transition
+ * Ensures valid state transitions
+ *
+ * @param {string} fromStatus - Current status
+ * @param {string} toStatus - Desired status
+ * @returns {boolean} True if transition is valid
  */
 export function validateStageTransition(fromStatus, toStatus) {
   const validTransitions = {
@@ -352,8 +406,16 @@ export function validateStageTransition(fromStatus, toStatus) {
   return validTransitions[fromStatus]?.includes(toStatus) || false;
 }
 
+// ============================================================================
+// Confidence Calculation
+// ============================================================================
+
 /**
  * Calculate overall canvas confidence
+ * Averages confidence across all stages
+ *
+ * @param {object} canvas - Canvas object
+ * @returns {number} Average confidence (0-100)
  */
 export function calculateOverallConfidence(canvas) {
   if (!canvas || !canvas.stages) {
