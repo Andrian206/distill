@@ -258,8 +258,8 @@ Why do first-time builders get trapped in a discovery loop?
 | 3 | Too many solutions | Distillation Engine that narrows down alternatives |
 | 4 | Assumptions treated as facts | "Assumption" & "Evidence" Stages with validation |
 | 5 | Undetected contradictions | Impact Detection & Consistency Check |
-| 6 | No progress tracking | Thinking Canvas with visual states |
-| 7 | Fear of choosing a direction | Confidence scoring & decision support |
+| 6 | No progress tracking | Thinking Canvas with visual states & Progress Engine |
+| 7 | Fear of choosing a direction | Multi-factor Confidence Engine |
 | 8 | Never reaching the MVP | Structured flow leading to Project Blueprint |
 
 ---

@@ -76,8 +76,9 @@ This document defines the data model for Distill at the conceptual, logical, and
 | Attribute | Data Type | Constraints | Description |
 |-----------|-----------|-------------|-------------|
 | id | UUID | PK, NOT NULL | Unique project identifier |
-| name | VARCHAR(255) | NOT NULL | Project name (user-defined or default) |
-| status | VARCHAR(50) | NOT NULL, DEFAULT 'discovering' | Lifecycle state: discovering, distilling, validating, completed |
+| name | VARCHAR(255) | NOT NULL DEFAULT 'Untitled Project' | Project name (user-defined or default) |
+| status | VARCHAR(50) | NOT NULL DEFAULT 'discovering' | Lifecycle state: discovering, distilling, validating, completed |
+| domain | VARCHAR(50) | NULL DEFAULT 'general' | Project domain: general, enterprise, startup, research, community |
 | created_at | TIMESTAMP | NOT NULL, DEFAULT NOW() | Project creation time |
 | updated_at | TIMESTAMP | NOT NULL, DEFAULT NOW() | Last modification time |
 
@@ -96,9 +97,10 @@ This document defines the data model for Distill at the conceptual, logical, and
 | id | UUID | PK, NOT NULL | Unique stage identifier |
 | canvas_id | UUID | FK → CANVAS.id, NOT NULL | Parent canvas |
 | name | VARCHAR(50) | NOT NULL | Stage key: idea, user, workflow, pain_point, root_cause, assumption, evidence, opportunity, decision, mvp |
-| status | VARCHAR(50) | NOT NULL, DEFAULT 'not_started' | not_started, partial, complete, needs_review |
+| status | VARCHAR(50) | NOT NULL DEFAULT 'not_started' | not_started, partial, complete, needs_review |
 | summary | TEXT | NULL | Distilled core insight for this stage |
 | confidence | INTEGER | NULL, CHECK (0-100) | Confidence score (0-100%) |
+| contradictions | TEXT | NULL | JSON array of contradiction objects |
 | order_index | INTEGER | NOT NULL, CHECK (0-9) | Display order: 0=idea, 1=user, ..., 9=mvp |
 | created_at | TIMESTAMP | NOT NULL, DEFAULT NOW() | Stage creation time |
 | updated_at | TIMESTAMP | NOT NULL, DEFAULT NOW() | Last update time |
@@ -113,6 +115,8 @@ This document defines the data model for Distill at the conceptual, logical, and
 | stage_id | UUID | FK → STAGE.id, NOT NULL | Parent stage |
 | type | VARCHAR(50) | NOT NULL | confirmed, needs_validation, next_step |
 | content | TEXT | NOT NULL | Item text content |
+| evidence_type | VARCHAR(50) | NULL | explicit, observational, experiential, assumption |
+| confidence_boost | INTEGER | NULL, DEFAULT 0, CHECK (0-20) | Confidence boost from evidence type |
 | order_index | INTEGER | NOT NULL, DEFAULT 0 | Display order within type |
 | created_at | TIMESTAMP | NOT NULL, DEFAULT NOW() | Item creation time |
 
@@ -154,6 +158,8 @@ CREATE TABLE projects (
     name          TEXT NOT NULL DEFAULT 'Untitled Project',
     status        TEXT NOT NULL DEFAULT 'discovering'
                   CHECK (status IN ('discovering', 'distilling', 'validating', 'completed')),
+    domain        TEXT DEFAULT 'general'
+                  CHECK (domain IN ('general', 'enterprise', 'startup', 'research', 'community')),
     created_at    DATETIME NOT NULL DEFAULT (datetime('now')),
     updated_at    DATETIME NOT NULL DEFAULT (datetime('now'))
 );
@@ -187,6 +193,7 @@ CREATE TABLE stages (
                   CHECK (status IN ('not_started', 'partial', 'complete', 'needs_review')),
     summary       TEXT,
     confidence    INTEGER CHECK (confidence >= 0 AND confidence <= 100),
+    contradictions TEXT,                     -- JSON array of contradiction objects
     order_index   INTEGER NOT NULL CHECK (order_index >= 0 AND order_index <= 9),
     created_at    DATETIME NOT NULL DEFAULT (datetime('now')),
     updated_at    DATETIME NOT NULL DEFAULT (datetime('now')),
@@ -206,6 +213,10 @@ CREATE TABLE stage_items (
     type          TEXT NOT NULL
                   CHECK (type IN ('confirmed', 'needs_validation', 'next_step')),
     content       TEXT NOT NULL,
+    evidence_type TEXT
+                  CHECK (evidence_type IS NULL OR evidence_type IN ('explicit', 'observational', 'experiential', 'assumption')),
+    confidence_boost INTEGER DEFAULT 0
+                  CHECK (confidence_boost >= 0 AND confidence_boost <= 20),
     order_index   INTEGER NOT NULL DEFAULT 0,
     created_at    DATETIME NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (stage_id) REFERENCES stages(id) ON DELETE CASCADE
@@ -213,6 +224,7 @@ CREATE TABLE stage_items (
 
 CREATE INDEX idx_stage_items_stage ON stage_items(stage_id);
 CREATE INDEX idx_stage_items_type ON stage_items(type);
+CREATE INDEX idx_stage_items_evidence_type ON stage_items(evidence_type);
 
 -- --------------------------------------------------------
 -- Table: messages
@@ -422,6 +434,9 @@ ORDER BY updated_at DESC;
 | v0.1.0 | Initial schema | Schema as defined in Section 4 |
 | v0.2.0 | Add message.structured_data | `ALTER TABLE messages ADD COLUMN structured_data TEXT;` |
 | v0.3.0 | Add stage.confidence | `ALTER TABLE stages ADD COLUMN confidence INTEGER CHECK (confidence >= 0 AND confidence <= 100);` |
+| v0.4.0 | Add stage.contradictions | `ALTER TABLE stages ADD COLUMN contradictions TEXT;` |
+| v0.5.0 | Add stage_items.evidence_type + confidence_boost | `ALTER TABLE stage_items ADD COLUMN evidence_type TEXT; ALTER TABLE stage_items ADD COLUMN confidence_boost INTEGER DEFAULT 0;` |
+| v0.6.0 | Add project.domain | `ALTER TABLE projects ADD COLUMN domain TEXT DEFAULT 'general';` |
 
 ---
 

@@ -1,7 +1,7 @@
 /**
  * Reflection Prompt
- * Generates synthesis of recent conversation
- * Triggered every 5 messages
+ * Docs §11: Synthesize recent conversation, triggered every 5 messages
+ * Format: checkmarks (✓) for established facts, bullets (•) for unclear items
  */
 
 export function buildReflectionPrompt(canvas, recentMessages) {
@@ -10,41 +10,34 @@ export function buildReflectionPrompt(canvas, recentMessages) {
 
     return `## Reflection Task
 
-You are performing a reflection synthesis after several conversation turns.
+You are synthesizing the recent conversation turns.
 
 ${canvasContext}
 
 ${conversationContext}
 
 ## Your Task
+Provide a brief reflection with this EXACT format:
 
-Provide a brief reflection that synthesizes the recent conversation:
+Saya sudah memahami:
+✓ [Stage]: [Key insight]
+✓ [Stage]: [Key insight]
 
-**Format:**
+Masih belum jelas:
+• [Stage]: [Specific gap]
 
-**What we've established:**
-- [Key point 1 with confidence level]
-- [Key point 2 with confidence level]
-- [Key point 3 with confidence level]
-
-**What's still unclear:**
-- [Gap or ambiguity 1]
-- [Gap or ambiguity 2]
-
-**Next focus:**
-[What should we explore next and why]
+Fokus selanjutnya:
+[ONE specific next stage]
 
 ## Guidelines
+1. Use ✓ for established facts, • for unclear items
+2. Max 5 established points, 2-3 unclear items
+3. Reference specific stages (Idea, User, Workflow, etc.)
+4. Suggest ONE clear next step
+5. Match user's language
+6. Be direct, no fluff
 
-1. Keep it concise (4-5 sentences total)
-2. Reference specific facts from the conversation
-3. Highlight confidence levels (high/medium/low)
-4. Identify the most critical gap to address
-5. Suggest ONE clear next step
-6. Use the same language as the user's messages
-7. Be direct and factual, not conversational
-
-Generate reflection now:`;
+Generate reflection now (use the format above):`;
 }
 
 function formatCanvasForReflection(canvas) {
@@ -55,15 +48,13 @@ function formatCanvasForReflection(canvas) {
     const stagesSummary = canvas.stages
         .filter(s => s.status !== 'not_started')
         .map(stage => {
-            const confidenceLabel = getConfidenceLabel(stage.confidence);
-            const statusIcon = getStatusIcon(stage.status);
-            return `- ${stage.name}: ${statusIcon} ${stage.status} (${stage.confidence}% ${confidenceLabel}) - "${stage.summary || 'N/A'}"`;
+            const confidenceLabel = stage.confidence >= 80 ? 'high' : stage.confidence >= 50 ? 'medium' : 'low';
+            const statusIcon = stage.status === 'complete' ? '🟢' : stage.status === 'partial' ? '🟡' : '🔴';
+            return `- ${stage.name}: ${statusIcon} ${stage.status} (${stage.confidence || 0}% ${confidenceLabel}) - "${stage.summary || 'N/A'}"`;
         })
         .join('\n');
 
-    return `## Current Canvas State
-
-${stagesSummary || '(No stages filled yet)'}`;
+    return `## Current Canvas State\n\n${stagesSummary || '(No stages filled yet)'}`;
 }
 
 function formatRecentConversation(messages) {
@@ -71,7 +62,6 @@ function formatRecentConversation(messages) {
         return '## Recent Conversation\n(No messages)';
     }
 
-    // Get last 5 conversation messages (exclude system)
     const conversationMessages = messages
         .filter(m => m.role !== 'system')
         .slice(-5);
@@ -83,25 +73,7 @@ function formatRecentConversation(messages) {
         })
         .join('\n\n');
 
-    return `## Recent Conversation (Last ${conversationMessages.length} messages)
-
-${formatted}`;
-}
-
-function getConfidenceLabel(confidence) {
-    if (confidence >= 80) return 'high';
-    if (confidence >= 50) return 'medium';
-    return 'low';
-}
-
-function getStatusIcon(status) {
-    const icons = {
-        not_started: '⚪',
-        partial: '🟡',
-        complete: '🟢',
-        needs_review: '🔴',
-    };
-    return icons[status] || '⚪';
+    return `## Recent Conversation (Last ${conversationMessages.length} messages)\n\n${formatted}`;
 }
 
 export default buildReflectionPrompt;

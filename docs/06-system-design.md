@@ -18,7 +18,7 @@
 | Backend | Express.js | Simple REST API |
 | Database | SQLite (file) | Single file, zero config, sufficient for MVP |
 | ORM | None | Raw queries with helper functions |
-| AI | Gemini API (Google) | Single LLM, stage-based prompts |
+| AI | Gemini API (Google) | AI Reasoning Engine (Multi-Engine) |
 | HTTP Client | Fetch (native) | Frontend to backend |
 | Deployment | Render Web Service | Auto-deploy on push |
 
@@ -85,19 +85,33 @@ src/
 
 ```
 server/
-├── index.js              # Entry point, middleware, routes
-├── db.js                 # SQLite connection + helpers
+├── index.js              # Entry point, middleware, routes, static serving
+├── db.js                 # SQLite connection + helpers + migrations
+├── migrations/           # DB Schema version control
+│   ├── 002_add_evidence_tracking.sql
+│   ├── 003_add_contradictions.sql
+│   └── README.md
 ├── routes/
-│   ├── projects.js       # Project CRUD
-│   ├── chat.js           # POST /chat (AI reasoning)
-│   └── blueprint.js      # GET /blueprint/:id
+│   ├── projects.js       # Project CRUD + greeting generation
+│   ├── chat.js           # POST/GET /chat (AI reasoning + context compression)
+│   └── blueprint.js      # GET/POST /blueprint/:id (preview + generation)
 ├── services/
-│   ├── aiService.js      # Gemini API client + prompt assembly
-│   ├── canvasService.js  # Canvas state logic
-│   └── blueprintService.js # Blueprint compiler
+│   ├── aiService.js      # Gemini API client (extract, respond, distill, blueprint)
+│   ├── canvasService.js  # Canvas state logic (merge, impact, stage lock)
+│   ├── blueprintService.js # Blueprint compilation (JS fallback)
+│   ├── confidenceEngine.js # Confidence calculation (evidence, consistency, completeness)
+│   ├── contradictionEngine.js # Contradiction detection and handling
+│   ├── modeEngine.js     # Conversation mode selection (6 modes)
+│   ├── progressEngine.js # Progress tracking and detection
+│   └── promptComposer.js # Dynamic prompt assembly (reasoning state + memory)
 └── prompts/
-    ├── extract.js        # Prompt A: Information Extraction
-    └── converse.js       # Prompt B: Conversation Response
+    ├── system.js         # Core persona instructions
+    ├── extract.js        # Information extraction (Prompt A)
+    ├── converse.js       # Standard conversation response
+    ├── reflect.js        # Reflection/synthesis mode
+    ├── distill.js        # Distillation prompt
+    ├── summarize.js      # Context compression/summarization
+    └── blueprint.js      # Blueprint compilation
 ```
 
 ---
@@ -235,6 +249,7 @@ distill/
 ├── server/               # Backend (Express)
 │   ├── index.js
 │   ├── db.js
+│   ├── migrations/       # DB Schema migrations
 │   ├── routes/
 │   │   ├── projects.js
 │   │   ├── chat.js
@@ -242,10 +257,20 @@ distill/
 │   ├── services/
 │   │   ├── aiService.js
 │   │   ├── canvasService.js
-│   │   └── blueprintService.js
+│   │   ├── blueprintService.js
+│   │   ├── confidenceEngine.js
+│   │   ├── contradictionEngine.js
+│   │   ├── modeEngine.js
+│   │   ├── progressEngine.js
+│   │   └── promptComposer.js
 │   └── prompts/
+│       ├── blueprint.js
+│       ├── converse.js
+│       ├── distill.js
 │       ├── extract.js
-│       └── converse.js
+│       ├── reflect.js
+│       ├── summarize.js
+│       └── system.js
 └── dist/                 # Build output (auto-generated)
 ```
 

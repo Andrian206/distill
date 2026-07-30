@@ -1,17 +1,12 @@
 /**
  * Prompt Composer
- * Composes dynamic prompts from multiple components:
+ * Docs §11: Composes dynamic prompts from components:
  * System + Reasoning State + Conversation Memory + Current Objective + User Message
  */
 
 import SYSTEM_PROMPT from '../prompts/system.js';
 import { getModeInstructions } from './modeEngine.js';
 
-/**
- * Compose conversation prompt from components
- * @param {object} components - Prompt components
- * @returns {string} Composed prompt
- */
 export function composeConversationPrompt(components) {
     const {
         systemPrompt = SYSTEM_PROMPT,
@@ -41,165 +36,80 @@ ${getModeInstructions(currentObjective.mode)}
 Generate your response now (natural text only, no JSON):`;
 }
 
-/**
- * Format reasoning state (stage statuses and confidence)
- * @param {object} reasoningState - Current state of all stages
- * @returns {string} Formatted state
- */
 function formatReasoningState(reasoningState) {
     if (!reasoningState || !reasoningState.stages) {
         return '## Reasoning State\nNo stages yet.';
     }
 
     const stageLines = reasoningState.stages.map(stage => {
-        const statusIcon = getStatusIcon(stage.status);
-        const confidenceLabel = getConfidenceLabel(stage.confidence);
+        const statusIcon = stage.status === 'complete' ? '🟢' : stage.status === 'partial' ? '🟡' : '⚪';
+        const confidenceLabel = stage.confidence >= 80 ? 'high' : stage.confidence >= 50 ? 'medium' : 'low';
         const evidenceCount = stage.items ? stage.items.filter(i => i.type === 'confirmed').length : 0;
 
-        let line = `- ${stage.name}: ${statusIcon} ${stage.status} (${stage.confidence}% ${confidenceLabel})`;
-
-        if (evidenceCount > 0) {
-            line += ` | ${evidenceCount} evidence`;
-        }
-
-        if (stage.contradictions && stage.contradictions.length > 0) {
-            line += ` | ⚠️ ${stage.contradictions.length} contradictions`;
-        }
-
+        let line = `- ${stage.name}: ${statusIcon} ${stage.status} (${stage.confidence || 0}% ${confidenceLabel})`;
+        if (evidenceCount > 0) line += ` | ${evidenceCount} evidence`;
         return line;
     });
 
-    return `## Reasoning State
-Current progress across all stages:
-
-${stageLines.join('\n')}
-
-Overall Canvas Confidence: ${reasoningState.overallConfidence || 0}%`;
+    return `## Reasoning State\n${stageLines.join('\n')}\n\nOverall Canvas Confidence: ${reasoningState.overallConfidence || 0}%`;
 }
 
-/**
- * Format conversation memory (summary of established facts)
- * @param {object} memory - Conversation memory
- * @returns {string} Formatted memory
- */
 function formatConversationMemory(memory) {
     if (!memory || Object.keys(memory).length === 0) {
         return '## Conversation Memory\nNo established facts yet.';
     }
 
-    const memoryLines = [];
+    const memoryLines = ['idea', 'user', 'workflow', 'pain_point', 'root_cause', 'assumption', 'evidence', 'opportunity', 'decision', 'mvp']
+        .filter(key => memory[key])
+        .map(key => `**${capitalize(key.replace('_', ' '))}:** ${memory[key]}`);
 
-    if (memory.idea) memoryLines.push(`**Project:** ${memory.idea}`);
-    if (memory.user) memoryLines.push(`**Target User:** ${memory.user}`);
-    if (memory.workflow) memoryLines.push(`**Current Workflow:** ${memory.workflow}`);
-    if (memory.pain_point) memoryLines.push(`**Pain Point:** ${memory.pain_point}`);
-    if (memory.root_cause) memoryLines.push(`**Root Cause:** ${memory.root_cause}`);
-    if (memory.assumption) memoryLines.push(`**Key Assumption:** ${memory.assumption}`);
-    if (memory.evidence) memoryLines.push(`**Evidence:** ${memory.evidence}`);
-    if (memory.opportunity) memoryLines.push(`**Opportunity:** ${memory.opportunity}`);
-    if (memory.decision) memoryLines.push(`**Decision:** ${memory.decision}`);
-    if (memory.mvp) memoryLines.push(`**MVP Scope:** ${memory.mvp}`);
-
-    return `## Conversation Memory
-What we've established so far:
-
-${memoryLines.join('\n')}`;
+    return `## Conversation Memory\n${memoryLines.join('\n')}`;
 }
 
-/**
- * Format recent messages for context
- * @param {array} messages - Recent messages
- * @returns {string} Formatted messages
- */
 function formatRecentMessages(messages) {
     if (!messages || messages.length === 0) {
         return '## Recent Conversation\n(No previous messages)';
     }
 
-    // Filter out system messages (summaries)
     const conversationMessages = messages.filter(m => m.role !== 'system');
-
     const formatted = conversationMessages
-        .slice(-5) // Last 5 conversation messages
-        .map(msg => {
-            const role = msg.role === 'user' ? 'User' : 'Assistant';
-            return `${role}: "${msg.content}"`;
-        })
+        .slice(-5)
+        .map(msg => `${msg.role === 'user' ? 'User' : 'Assistant'}: "${msg.content}"`)
         .join('\n');
 
-    return `## Recent Conversation (Last ${Math.min(5, conversationMessages.length)} messages)
-${formatted}`;
+    return `## Recent Conversation (Last ${Math.min(5, conversationMessages.length)} messages)\n${formatted}`;
 }
 
-/**
- * Format current objective (mode and goal)
- * @param {object} objective - Current objective
- * @returns {string} Formatted objective
- */
 function formatCurrentObjective(objective) {
     if (!objective) {
         return '## Current Objective\nMode: clarifying\nGoal: Understand user needs';
     }
 
     const { mode, targetStage, goal, stageGuidance } = objective;
+    const problemStages = ['idea', 'user', 'workflow', 'pain_point', 'root_cause'];
+    const isProblemStage = problemStages.includes(targetStage);
 
     return `## Current Objective
 **Mode:** ${mode}
 **Target Stage:** ${targetStage}
 **Goal:** ${goal || stageGuidance || 'Continue discovery'}
-${stageGuidance ? `\n**Stage Guidance:** ${stageGuidance}` : ''}`;
+**Scope:** ${isProblemStage ? 'Understand the problem — do NOT evaluate solution' : 'Define what USER can build — do NOT chase edge cases'}`;
 }
 
-/**
- * Get status icon
- * @param {string} status - Stage status
- * @returns {string} Icon
- */
-function getStatusIcon(status) {
-    const icons = {
-        not_started: '⚪',
-        partial: '🟡',
-        complete: '🟢',
-        needs_review: '🔴',
-    };
-    return icons[status] || '⚪';
+function capitalize(str) {
+    return str.replace(/\b\w/g, c => c.toUpperCase());
 }
 
-/**
- * Get confidence label
- * @param {number} confidence - Confidence score
- * @returns {string} Label
- */
-function getConfidenceLabel(confidence) {
-    if (confidence >= 80) return 'high';
-    if (confidence >= 50) return 'medium';
-    return 'low';
-}
-
-/**
- * Build conversation memory from canvas
- * @param {object} canvas - Canvas state
- * @returns {object} Memory object
- */
 export function buildConversationMemory(canvas) {
     if (!canvas || !canvas.stages) return {};
-
-    const memory = {};
-
-    canvas.stages.forEach(stage => {
+    return canvas.stages.reduce((acc, stage) => {
         if (stage.summary && stage.status !== 'not_started') {
-            memory[stage.name] = stage.summary;
+            acc[stage.name] = stage.summary;
         }
-    });
-
-    return memory;
+        return acc;
+    }, {});
 }
 
-/**
- * Build reasoning state from canvas
- * @param {object} canvas - Canvas state
- * @returns {object} Reasoning state
- */
 export function buildReasoningState(canvas) {
     if (!canvas || !canvas.stages) {
         return { stages: [], overallConfidence: 0 };

@@ -1,8 +1,7 @@
 /**
  * Blueprint Compilation Prompt
- * Compiles 11-section blueprint from distilled canvas
+ * Docs §7.08: Compiles 11-section blueprint from distilled canvas
  */
-
 export default function buildBlueprintPrompt(project, distilledCanvas) {
     const stages = distilledCanvas.stages.reduce((acc, stage) => {
         acc[stage.name] = {
@@ -13,68 +12,43 @@ export default function buildBlueprintPrompt(project, distilledCanvas) {
         return acc;
     }, {});
 
-    return `# BLUEPRINT COMPILATION TASK
+    return `# BLUEPRINT COMPILATION
 
-You are compiling a Project Blueprint from a distilled discovery canvas.
+Project: ${project.name}
 
-## PROJECT INFORMATION
-Project Name: ${project.name}
-Status: ${project.status}
-
-## DISTILLED CANVAS
-
+## Canvas Data
 ${Object.entries(stages).map(([name, data]) => `
 ### ${name.toUpperCase()}
 Summary: ${data.summary}
 Confidence: ${data.confidence}%
-Confirmed Items: ${data.items.filter(i => i.type === 'confirmed').length}
-Needs Validation: ${data.items.filter(i => i.type === 'needs_validation').length}
-`).join('\n')}
+Confirmed Items: ${data.items.filter(i => i.type === 'confirmed').length}`).join('')}
 
-## YOUR TASK
+## Task
+Compile 11-section Project Blueprint using ONLY canvas data above.
 
-Compile the 11-section Project Blueprint. Use ONLY information from the canvas above.
-
-## OUTPUT FORMAT
-
-Return ONLY valid JSON in this exact format:
-
-\`\`\`json
+## Output (JSON only)
 {
   "project_name": "${project.name}",
-  "problem_statement": "Clear statement of the problem (from pain_point)",
-  "primary_user": "Who is the main user (from user)",
-  "workflow": "Current workflow description (from workflow)",
-  "core_pain_point": "The main pain point (from pain_point)",
-  "root_cause": "Why the problem exists (from root_cause)",
-  "key_evidence": [
-    "Evidence item 1 (from evidence confirmed items)",
-    "Evidence item 2"
-  ],
-  "opportunity": "The opportunity identified (from opportunity)",
-  "decision": "The decision made (from decision)",
-  "mvp_scope": [
-    "MVP feature 1 (from mvp confirmed items)",
-    "MVP feature 2"
-  ],
-  "next_validation": [
-    "Validation step 1 (from assumption/evidence needs_validation)",
-    "Validation step 2"
-  ],
-  "reasoning_summary": "Brief summary of the reasoning process (2-3 sentences)",
+  "problem_statement": "from pain_point",
+  "primary_user": "from user",
+  "workflow": "from workflow",
+  "core_pain_point": "from pain_point",
+  "root_cause": "from root_cause",
+  "key_evidence": ["from evidence"],
+  "opportunity": "from opportunity",
+  "decision": "from decision",
+  "mvp_scope": ["from mvp"],
+  "next_validation": ["from assumption/evidence"],
+  "reasoning_summary": "2-3 sentences",
   "confidence_overall": 85
 }
-\`\`\`
 
-IMPORTANT RULES:
-1. Use ONLY information from the canvas - do NOT invent new content
-2. If a section has no data, use a placeholder like "Not yet defined"
-3. key_evidence, mvp_scope, and next_validation must be arrays
-4. reasoning_summary should explain the logical flow from problem to solution
-5. confidence_overall should be the average of all stage confidences
-6. Keep all text concise and actionable
-7. Ensure all JSON is valid and properly formatted
-`;
+Rules:
+1. Use ONLY canvas data, do not invent
+2. If no data, use "Not yet defined"
+3. Keep text concise and actionable
+
+Generate now:`;
 }
 
 // Made with Bob

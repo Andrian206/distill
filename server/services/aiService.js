@@ -19,12 +19,12 @@ console.log('✅ Gemini API key detected');
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 // Model configuration
-const MODEL_NAME = 'gemma-4-31b-it';
+const MODEL_NAME = 'gemini-3.1-flash-lite';
 const GENERATION_CONFIG = {
-  temperature: 0.75,
+  temperature: 0.70,
   topK: 50,
-  topP: 0.95,
-  maxOutputTokens: 2560,
+  topP: 0.90,
+  maxOutputTokens: 3096,
 };
 
 /**
@@ -103,16 +103,24 @@ async function callGemini(prompt, isJsonMode = false, retryCount = 0) {
   });
 
   try {
-    const result = await model.generateContent([
-      { text: SYSTEM_PROMPT },
-      { text: prompt },
-    ]);
+    // For Gemma models, combine system prompt + user prompt in one text
+    // to avoid confusion with multi-part input
+    const combinedPrompt = isJsonMode
+      ? `${SYSTEM_PROMPT}\n\n${prompt}\n\nReturn ONLY valid JSON. No markdown. No explanation.`
+      : `${SYSTEM_PROMPT}\n\n${prompt}`;
+
+    const result = await model.generateContent(combinedPrompt);
 
     const response = await result.response;
     const text = response.text();
 
     if (!text) {
       throw new Error('Empty response from Gemini API');
+    }
+
+    // Log raw response for debugging JSON extraction issues
+    if (isJsonMode) {
+      console.log('📥 Raw extraction response:', text.substring(0, 200));
     }
 
     return text;

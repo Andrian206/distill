@@ -286,8 +286,8 @@ This module handles the visual display of the Thinking Canvas — a card-based w
 | Status | Visual | Display Description |
 |--------|--------|---------------------|
 | not_started | ⚪ Gray/Neutral | Thin card, only title and brief guidance |
-| in_progress | 🟡 Yellow/Active | Expanded card, displays summary, active indicator |
-| completed | 🟢 Green/Done | Compact card, displays result summary, checkmark |
+| partial | 🟡 Yellow/Active | Expanded card, displays summary, active indicator |
+| complete | 🟢 Green/Done | Compact card, displays result summary, checkmark |
 | needs_review | 🔴 Red/Warning | Card with warning indicator, indicating review is needed |
 
 **Acceptance Criteria:**

@@ -13,10 +13,6 @@ Development: http://localhost:10000/api
 
 ### 2.1 Projects
 
-**Note:** No project list endpoint. Each session starts fresh.
-
----
-
 #### POST /projects
 Create new project (starts fresh session).
 
@@ -33,13 +29,40 @@ Create new project (starts fresh session).
   "id": "uuid",
   "name": "EduRecord",
   "status": "discovering",
+  "domain": "general",
   "created_at": "2026-07-28T10:00:00Z",
   "updated_at": "2026-07-28T10:00:00Z",
-  "canvas_id": "uuid"
+  "canvas_id": "uuid",
+  "greeting": {
+    "id": "uuid",
+    "role": "assistant",
+    "content": "Hi! I'm here to help you transform your idea into a clear project direction. What would you like to build?",
+    "timestamp": "2026-07-28T10:00:00Z",
+    "turn_number": 1
+  }
 }
 ```
 
 Side effect: Creates canvas with 10 stages (all `not_started`).
+
+---
+
+#### GET /projects
+List all projects (sorted by most recent).
+
+**Response 200:**
+```json
+[
+  {
+    "id": "uuid",
+    "name": "EduRecord",
+    "status": "discovering",
+    "domain": "general",
+    "created_at": "2026-07-28T10:00:00Z",
+    "updated_at": "2026-07-28T10:05:00Z"
+  }
+]
+```
 
 ---
 
@@ -52,10 +75,12 @@ Get project with full canvas.
   "id": "uuid",
   "name": "EduRecord",
   "status": "discovering",
+  "domain": "general",
   "created_at": "...",
   "updated_at": "...",
   "canvas": {
     "id": "uuid",
+    "updated_at": "...",
     "stages": [
       {
         "id": "uuid",
@@ -63,9 +88,17 @@ Get project with full canvas.
         "status": "complete",
         "summary": "Student record app",
         "confidence": 90,
+        "contradictions": [],
         "order_index": 0,
         "items": [
-          {"id": "uuid", "type": "confirmed", "content": "...", "order_index": 0}
+          {
+            "id": "uuid",
+            "type": "confirmed",
+            "content": "...",
+            "order_index": 0,
+            "evidence_type": "explicit",
+            "confidence_boost": 20
+          }
         ]
       }
     ]
@@ -75,6 +108,16 @@ Get project with full canvas.
 
 ---
 
+#### DELETE /projects/:id
+Delete project and all related data (cascade).
+
+**Response 200:**
+```json
+{
+  "message": "Project deleted successfully",
+  "id": "uuid"
+}
+```
 
 ---
 
@@ -99,14 +142,22 @@ Send message, get AI response + canvas updates.
     "role": "assistant",
     "content": "Got it — teachers are your main users...",
     "timestamp": "2026-07-28T10:05:00Z",
-    "turn_number": 3
+    "turn_number": 3,
+    "mode": "clarifying"
   },
   "canvas_updates": {
-    "idea": {"action": "replace", "status": "complete", "summary": "...", "confidence": 90},
-    "user": {"action": "replace", "status": "complete", "summary": "...", "confidence": 85}
+    "idea": {
+      "action": "replace", 
+      "status": "complete", 
+      "summary": "...", 
+      "confidence": 90,
+      "contradictions": []
+    }
   },
-  "impact": {
-    "affected_stages": []
+  "reasoning_engine": {
+    "confidence_overall": 45,
+    "progress": {"has_progress": true, "indicators": [...]},
+    "stagnation": {"is_stagnant": false}
   },
   "missing_stages": ["workflow"]
 }
@@ -142,6 +193,36 @@ Get chat history for a project.
 ---
 
 ### 2.3 Blueprint
+
+#### GET /blueprint/:project_id/preview
+Generate blueprint preview without saving (for user review before finalizing).
+
+**Response 200:**
+```json
+{
+  "preview": true,
+  "project_id": "uuid",
+  "content": {
+    "project_name": "EduRecord",
+    "problem_statement": "...",
+    "primary_user": "...",
+    "workflow": "...",
+    "core_pain_point": "...",
+    "root_cause": "...",
+    "key_evidence": ["..."],
+    "opportunity": "...",
+    "decision": "...",
+    "mvp_scope": ["..."],
+    "next_validation": ["..."],
+    "reasoning_summary": "...",
+    "confidence_overall": 82
+  }
+}
+```
+
+**Error 400:** If stages are incomplete or contradictions found.
+
+---
 
 #### POST /blueprint/:project_id
 Generate blueprint after distillation.
@@ -217,7 +298,10 @@ All errors use this shape:
 
 | Status | Code | When |
 |--------|------|------|
-| 400 | INVALID_INPUT | Missing required field |
+| 400 | INVALID_INPUT | Missing required field or invalid input |
+| 400 | INCOMPLETE_CANVAS | Cannot generate blueprint (stages incomplete) |
+| 400 | CONTRADICTIONS_FOUND | Contradictions detected in canvas |
+| 400 | APPROVAL_REQUIRED | POST /blueprint requires `{approve: true}` |
 | 404 | NOT_FOUND | Project/blueprint not found |
 | 500 | AI_ERROR | Gemini API failure |
 | 500 | DB_ERROR | SQLite operation failed |

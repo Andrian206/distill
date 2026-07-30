@@ -200,8 +200,19 @@ Post-conditions:
 │         • Workflow → Needs Review (due to user change)      │
 │         • (No contradictions detected)                      │
 └─────────────────────────────────────────────────────────────┘
-                            │
-                            ▼
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Step 4b: Contradiction Detection — identifying logical     │
+│         inconsistencies between stages                     │
+│         (Actor: AI)                                         │
+│                                                             │
+│         Example:                                            │
+│         • User = "Teacher" but Opportunity = "Parent app"   │
+│         → Both stages marked as Needs Review                │
+└─────────────────────────────────────────────────────────────┘
+                             │
+                             ▼
 ┌─────────────────────────────────────────────────────────────┐
 │  Step 5: System updates the canvas display in real-time     │
 │         based on AI updates                                 │
@@ -259,12 +270,13 @@ Post-conditions:
 
 **Business Rules:**
 
-* BR-05: Every user message must be processed in the following order: Extract → Update → Impact → Detect → Respond
+* BR-05: Every user message must be processed in the following order: Extract → Update → Impact → Contradiction → Detect → Respond
 * BR-06: AI may only ask **one primary question** per turn to maintain focus
 * BR-07: The canvas must be updated before the chat response is displayed
 * BR-08: Impact detection must be performed for every stage update
-* BR-09: Users cannot manually edit the canvas — all changes occur through chat
-* BR-10: If a user modifies a stage that was previously complete, that stage changes to "Needs Review"
+* BR-09: Contradiction detection must be performed after impact detection
+* BR-10: Users cannot manually edit the canvas — all changes occur through chat
+* BR-11: If a user modifies a stage that was previously complete, that stage changes to "Needs Review"
 
 ---
 
@@ -610,7 +622,7 @@ Post-conditions:
 | Decision Point | Condition | Action |
 | --- | --- | --- |
 | DP-01 | User starts a new project | Initialize empty canvas, AI poses opening question |
-| DP-02 | User sends a message | Extract → Update → Impact → Detect → Respond |
+| DP-02 | User sends a message | Extract → Update → Impact → Contradiction → Respond |
 | DP-03 | Stage changes from Complete | Mark "Needs Review", detect impact on other stages |
 | DP-04 | All stages Complete | Trigger distillation process |
 | DP-05 | Contradiction detected | Mark affected stages, pose clarifying question |

@@ -20,22 +20,22 @@ Distill is an **AI Creative Reasoning Companion** that guides first-time builder
 │                         │                                           │
 │                         ▼                                           │
 │   ┌─────────────────────────────────────────────┐                   │
-│   │         REASONING ENGINE (Single LLM)       │                   │
+│   │         REASONING ENGINE (Multi-Engine)     │                   │
 │   │                                             │                   │
 │   │   ┌─────────────┐    ┌─────────────────┐   │                    │
 │   │   │  Prompt A   │───▶│  Information    │   │                   │
 │   │   │  Extraction │    │  Extraction     │   │                    │
 │   │   └─────────────┘    └────────┬────────┘   │                  │
 │   │                                │            │                  │
-│   │   ┌─────────────┐    ┌────────▼────────┐   │                  │
-│   │   │  Prompt B   │◀───│  Canvas Update  │   │                  │
-│   │   │Conversation │    │  + Impact Det.  │   │                  │
-│   │   └─────────────┘    └────────┬────────┘   │                  │
-│   │                               │            │                  │
-│   │   ┌───────────────────────────▼────────┐   │                  │
-│   │   │      Missing Stage Detection       │   │                  │
-│   │   │      + Question Generation         │   │                  │
-│   │   └────────────────────────────────────┘   │                  │
+│   │   ┌───────────────┐  ┌────────▼────────┐   │                  │
+│   │   │  Reasoning    │◀─┤  Canvas Update  │   │                  │
+│   │   │  Multi-Engine │  │  + Engine Calc  │   │                  │
+│   │   └───────┬───────┘  └────────┬────────┘   │                  │
+│   │           │                   │            │                  │
+│   │   ┌───────▼───────┐  ┌────────▼────────┐   │                  │
+│   │   │  Prompt B     │◀─┤  Dynamic Prompt │   │                  │
+│   │   │  Conversation │  │  Composition    │   │                  │
+│   │   └───────────────┘  └─────────────────┘   │                  │
 │   └─────────────────────────────────────────────┘                  │
 │                         │                                           │
 │                         ▼                                           │
@@ -255,30 +255,25 @@ Every conversation turn:
        ▼
 ┌─────────────────────────────┐
 │  1. Information Extraction  │
-│     (Prompt A)              │
+│     (extract.js)            │
 └─────────────────────────────┘
        │
        ▼
 ┌─────────────────────────────┐
-│  2. Canvas Update           │
-│     + Impact Detection      │
+│  2. Reasoning Multi-Engine  │
+│     (Confidence, Mode, etc) │
 └─────────────────────────────┘
        │
        ▼
 ┌─────────────────────────────┐
-│  3. Missing Stage Detection │
+│  3. Dynamic Prompt Compose  │
+│     (promptComposer.js)     │
 └─────────────────────────────┘
        │
        ▼
 ┌─────────────────────────────┐
-│  4. Question Generation     │
-│     (Prompt B)              │
-└─────────────────────────────┘
-       │
-       ▼
-┌─────────────────────────────┐
-│  5. Chat Response           │
-│     (Natural language)      │
+│  4. Chat Response           │
+│     (converse.js / reflect) │
 └─────────────────────────────┘
 
 ```

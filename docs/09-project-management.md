@@ -37,12 +37,13 @@ Week 1          Week 2          Week 3          Week 4
 
 | Task | Owner | Deliverable |
 |------|-------|-------------|
-| ChatPanel UI + message display | Dev | Send/receive messages visible |
-| CanvasPanel with 10 cards | Dev | Cards render with status colors |
-| DetailPanel with 4 sections | Dev | Click card shows detail |
-| Zustand store for project state | Dev | State shared across panels |
-| POST /chat endpoint (mock AI) | Dev | Messages saved, echo response |
-| Session state in memory | Dev | State persists during active session |
+| | ChatPanel UI + message display | Dev | Send/receive messages visible |
+| | CanvasPanel with 10 cards | Dev | Cards render with status colors |
+| | DetailPanel with 4 sections | Dev | Click card shows detail |
+| | Zustand store for project state | Dev | State shared across panels |
+| | POST /chat endpoint (mock AI) | Dev | Messages saved, echo response |
+| | Session state in memory | Dev | State persists during active session |
+| | Project list page | Dev | List/create/delete projects |
 
 **Definition of Done:** Full chat + canvas flow works with mock AI.
 

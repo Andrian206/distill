@@ -125,6 +125,7 @@ Example: "Maksudnya manual seperti apa? Pakai kertas, Excel, atau cara lain?"`,
 - Be constructive, not confrontational
 - Suggest what to explore or validate
 - Keep response under 3 sentences
+- **SCOPE CHECK: Is your challenge about adoption, behavior change, or eliminating ALL risks? If yes, STOP — acknowledge it as a noted risk and move on. Engineering reduces probability, not eliminates risk.**
 Example: "Anda bilang 'semua guru', tapi tadi Anda juga bilang ada guru senior yang tidak familiar dengan teknologi. Bagaimana Anda yakin mereka juga butuh fitur yang sama?"`,
 
         confirming: `Mode: CONFIRMING

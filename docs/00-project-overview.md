@@ -270,7 +270,7 @@ Success occurs when users finish the session with enough clarity and confidence 
 | Core Value       | Ambiguous Idea → Clear Direction            |
 | Core Experience  | Thinking Canvas (Guided Thinking Workspace) |
 | Thinking Flow    | 10 Stages (Idea → MVP)                      |
-| AI Architecture  | Single LLM + Stage-Based Prompt             |
+| AI Architecture  | Multi-Engine (Confidence, Mode, Contradiction, Progress, Reflection, Prompt Composition) |
 | UI Layout        | 3 Panels (Chat + Canvas + Details)          |
 | Output           | Project Blueprint                           |
 | Canvas Editing   | Conversation-only, no manual editing        |
@@ -296,8 +296,10 @@ NO → Reject
 
 | Layer    | Technology                  |
 | -------- | --------------------------- |
-| Frontend | React + Vite + Tailwind CSS |
-| Routing  | React Router                |
-| Backend  | Express.js                  |
-| AI       | Gemini API (Single LLM)     |
-| Storage  | SQLite / JSON File          |
+| Frontend | React 18 + Vite + Tailwind CSS |
+| Routing  | React Router v6             |
+| State    | Zustand v5                  |
+| Backend  | Express.js                   |
+| Database | SQLite (better-sqlite3)      |
+| AI       | Google Gemini API (generative-ai) |
+| Deployment | Render (Web Service)      |

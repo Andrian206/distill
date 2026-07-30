@@ -247,6 +247,12 @@ The final output is a **Project Blueprint** — a handoff document ready for pla
 User Message
     │
     ▼
+┌─────────────────┐      ┌──────────────────┐
+│  Context Save   │      │  Save User Msg   │
+│  + Compression  │      │  to SQLite       │
+└─────────────────┘      └──────────────────┘
+    │
+    ▼
 ┌─────────────────┐
 │  Prompt A       │  → Gemini → Structured JSON (canvas updates)
 │  Extraction     │
@@ -260,8 +266,26 @@ User Message
     │
     ▼
 ┌─────────────────┐
+│  Contradiction  │  → Detect conflicts between stages
+│  Detection      │
+└─────────────────┘
+    │
+    ▼
+┌─────────────────┐
+│  Mode Engine    │  → Select conversation mode
+│  + Target Stage │     (clarifying, reflection, etc.)
+└─────────────────┘
+    │
+    ▼
+┌─────────────────┐
 │  Prompt B       │  → Gemini → Natural response
 │  Conversation   │
+└─────────────────┘
+    │
+    ▼
+┌─────────────────┐
+│  Save AI Msg    │
+│  + Confidence   │
 └─────────────────┘
     │
     ▼
@@ -298,6 +322,8 @@ distill/
 ├── server/                   # Backend (Express)
 │   ├── index.js
 │   ├── db.js
+│   ├── migrations/
+│   │   └── 001_initial_schema.sql
 │   ├── routes/
 │   │   ├── projects.js
 │   │   ├── chat.js
@@ -305,10 +331,20 @@ distill/
 │   ├── services/
 │   │   ├── aiService.js
 │   │   ├── canvasService.js
-│   │   └── blueprintService.js
+│   │   ├── blueprintService.js
+│   │   ├── confidenceEngine.js
+│   │   ├── contradictionEngine.js
+│   │   ├── modeEngine.js
+│   │   ├── progressEngine.js
+│   │   └── promptComposer.js
 │   └── prompts/
+│       ├── system.js
 │       ├── extract.js
-│       └── converse.js
+│       ├── converse.js
+│       ├── reflect.js
+│       ├── distill.js
+│       ├── summarize.js
+│       └── blueprint.js
 ├── docs/                     # Documentation
 │   ├── 00-project-overview.md
 │   ├── 01-problem-analysis.md
@@ -378,10 +414,13 @@ npm start
 | Method | Endpoint | Description |
 |---|---|---|
 | `POST` | `/api/projects` | Create a new project |
+| `GET` | `/api/projects` | List all projects |
 | `GET` | `/api/projects/:id` | Get project with full canvas |
+| `DELETE` | `/api/projects/:id` | Delete a project |
 | `POST` | `/api/chat` | Send message, get AI response + canvas updates |
 | `GET` | `/api/chat/:project_id` | Get chat history |
-| `POST` | `/api/blueprint/:project_id` | Generate blueprint |
+| `GET` | `/api/blueprint/:project_id/preview` | Preview blueprint (read-only) |
+| `POST` | `/api/blueprint/:project_id` | Generate & save blueprint (requires `{approve: true}`) |
 | `GET` | `/api/blueprint/:project_id` | Get existing blueprint |
 | `GET` | `/api/health` | Service health check |
 
