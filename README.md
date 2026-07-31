@@ -1,3 +1,5 @@
+> ⚠️ **DISCONTINUED** — This project is no longer maintained and is incomplete.
+
 # Distill
 
 > **From Ambiguity to Action.**
